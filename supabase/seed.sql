@@ -1,0 +1,754 @@
+-- ===========================================================================
+-- AI LANDING STUDIO - Datos iniciales
+--
+-- ARCHIVO GENERADO. No editar a mano.
+-- Se regenera con:  npm run seed:sql
+-- Fuente: src/lib/data/catalog.ts y src/lib/data/prompt-templates.ts
+--
+-- Es idempotente: puede ejecutarse varias veces sobre la misma base.
+-- ===========================================================================
+
+-- ---------------------------------------------------------------------------
+-- Proveedores y modelos (catalogo informativo; la disponibilidad real la
+-- decide el servidor segun las variables de entorno)
+-- ---------------------------------------------------------------------------
+
+insert into llm_providers (id, label, docs_url, env_key, is_enabled) values
+  ('mock',   'Modo demo (sin IA)', '',                                        null,             true),
+  ('gemini', 'Google Gemini',      'https://aistudio.google.com/apikey',      'GEMINI_API_KEY', true),
+  ('groq',   'Groq',               'https://console.groq.com/keys',           'GROQ_API_KEY',   true),
+  ('ollama', 'Ollama (local)',     'https://ollama.com/download',             null,             true)
+on conflict (id) do update set
+  label = excluded.label,
+  docs_url = excluded.docs_url,
+  env_key = excluded.env_key;
+
+insert into llm_models (id, provider_id, label, context_window, max_output_tokens, good_for_long_output, description) values
+  ('mock-studio-v1', 'mock', 'Demo determinista', 1000000, 100000, true, 'Plantillas reales de la aplicacion: genera HTML autocontenido y auditorias basadas en analisis estatico.'),
+  ('gemini-flash-latest', 'gemini', 'Gemini Flash (ultima estable)', 1048576, 65536, true, 'Alias que sigue al Flash estable mas reciente. No hay que mantenerlo a mano.'),
+  ('gemini-3.8-flash', 'gemini', 'Gemini 3.8 Flash', 1048576, 65536, true, 'Generacion mas reciente de la familia Flash.'),
+  ('gemini-3.7-flash', 'gemini', 'Gemini 3.7 Flash', 1048576, 65536, true, 'Version fijada, util si quieres resultados reproducibles.'),
+  ('gemini-3.6-flash', 'gemini', 'Gemini 3.6 Flash', 1048576, 65536, true, 'Version fijada de la familia Flash.'),
+  ('gemini-3.5-flash', 'gemini', 'Gemini 3.5 Flash', 1048576, 65536, true, 'Algo mas antiguo y por eso menos saturado. Buena alternativa cuando los nuevos dan 503.'),
+  ('gemini-3.5-flash-lite', 'gemini', 'Gemini 3.5 Flash Lite', 1048576, 65536, true, 'Mas barato y rapido; consume menos cuota. Bien para criticas y para DISCOVER.'),
+  ('gemini-3.1-flash-lite', 'gemini', 'Gemini 3.1 Flash Lite', 1048576, 65536, true, 'Opcion economica de la generacion anterior.'),
+  ('gemini-pro-latest', 'gemini', 'Gemini Pro (ultima estable)', 1048576, 65536, true, 'Mayor calidad de razonamiento y de diseno; mas lento y con mucha menos cuota gratuita.'),
+  ('openai/gpt-oss-120b', 'groq', 'GPT-OSS 120B', 131072, 65536, true, 'El mas capaz de Groq. Opcion recomendada para generar landings completas.'),
+  ('openai/gpt-oss-20b', 'groq', 'GPT-OSS 20B', 131072, 65536, true, 'Mismo limite de salida y mas rapido; menor calidad de diseno.'),
+  ('qwen/qwen3.8-27b', 'groq', 'Qwen 3.8 27B', 131042, 16384, false, 'Muy rapido. Su limite de salida de 16K va justo para una landing larga.'),
+  ('qwen3:8b', 'ollama', 'Qwen3 8B', 40960, 40960, true, 'Buen equilibrio entre calidad y velocidad en CPU/GPU domestica. Recomendado por defecto.'),
+  ('qwen3:14b', 'ollama', 'Qwen3 14B', 40960, 40960, true, 'Mas capaz que la version 8B; mas lento y exige mas memoria.'),
+  ('llama3.1', 'ollama', 'Llama 3.1 8B', 128000, 32768, true, 'Modelo generalista de Meta. Descargalo con `ollama pull llama3.1`.'),
+  ('mistral', 'ollama', 'Mistral 7B', 32768, 16384, false, 'Ligero y rapido; util cuando el equipo tiene poca VRAM.'),
+  ('deepseek-r1', 'ollama', 'DeepSeek R1', 64000, 32768, true, 'Modelo con razonamiento explicito. Igual que en Gemini, ese razonamiento consume presupuesto de salida.')
+on conflict (id) do update set
+  label = excluded.label,
+  context_window = excluded.context_window,
+  max_output_tokens = excluded.max_output_tokens,
+  good_for_long_output = excluded.good_for_long_output,
+  description = excluded.description;
+
+-- Retira del catalogo los modelos que ya no existen en el codigo.
+delete from llm_models where id not in ('mock-studio-v1', 'gemini-flash-latest', 'gemini-3.8-flash', 'gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-pro-latest', 'openai/gpt-oss-120b', 'openai/gpt-oss-20b', 'qwen/qwen3.8-27b', 'qwen3:8b', 'qwen3:14b', 'llama3.1', 'mistral', 'deepseek-r1');
+
+-- ---------------------------------------------------------------------------
+-- Categorias de Landing Page
+-- ---------------------------------------------------------------------------
+
+insert into landing_categories (slug, label) values
+  ('saas', 'SaaS'),
+  ('producto-fisico', 'Producto fisico'),
+  ('servicio-profesional', 'Servicio profesional'),
+  ('evento', 'Evento'),
+  ('portfolio', 'Portfolio'),
+  ('captacion-de-leads', 'Captacion de leads'),
+  ('app-movil', 'App movil'),
+  ('formacion', 'Formacion'),
+  ('ecommerce', 'Ecommerce'),
+  ('ong', 'ONG')
+on conflict (slug) do update set label = excluded.label;
+
+-- ---------------------------------------------------------------------------
+-- Tecnologias (11)
+-- owner_id null = catalogo comun, de solo lectura para los usuarios
+-- ---------------------------------------------------------------------------
+
+insert into technologies (
+  id, slug, name, description, category, version, prompt_instructions,
+  constraints, output_requirements, conflicts_with, priority,
+  self_contained_preview, is_active, sort_order, owner_id
+) values (
+  'html5', 'html5', 'HTML5', 'Marcado semantico estandar. Base de cualquier salida renderizable en el preview.',
+  'markup'::technology_category, '5',
+  'Escribe HTML5 semantico y valido.
+Usa <header>, <nav>, <main>, <section>, <article>, <aside> y <footer> segun su significado real, no como contenedores decorativos.
+Cada seccion debe tener un encabezado (h2/h3) coherente con la jerarquia: un unico <h1> por documento.
+Declara <html lang="es">, <meta charset="utf-8"> y <meta name="viewport" content="width=device-width, initial-scale=1">.
+Incluye <title> y <meta name="description"> con contenido real, no marcadores de posicion.',
+  array['No uses <div> cuando exista un elemento semantico adecuado.', 'No dejes atributos alt vacios en imagenes informativas.', 'No uses tablas para maquetar.']::text[], array['Un unico documento HTML completo que empiece por <!DOCTYPE html> y termine en </html>.', 'Contenido textual real y especifico del proyecto.']::text[], array[]::text[],
+  5, true, true, 10, null
+) on conflict (id) do update set
+  name = excluded.name,
+  description = excluded.description,
+  category = excluded.category,
+  version = excluded.version,
+  prompt_instructions = excluded.prompt_instructions,
+  constraints = excluded.constraints,
+  output_requirements = excluded.output_requirements,
+  conflicts_with = excluded.conflicts_with,
+  priority = excluded.priority,
+  self_contained_preview = excluded.self_contained_preview,
+  sort_order = excluded.sort_order;
+
+insert into technologies (
+  id, slug, name, description, category, version, prompt_instructions,
+  constraints, output_requirements, conflicts_with, priority,
+  self_contained_preview, is_active, sort_order, owner_id
+) values (
+  'css3', 'css3', 'CSS3', 'Estilos nativos con custom properties, grid y flexbox. Sin dependencias externas.',
+  'styling'::technology_category, '3',
+  'Escribe todo el CSS dentro de una unica etiqueta <style> en el <head>.
+Define un sistema de design tokens con custom properties en :root (color, espaciado, tipografia, radios, sombras).
+Usa CSS Grid para la maquetacion de pagina y Flexbox para la alineacion de componentes.
+Trabaja mobile-first: estilos base para movil y @media (min-width: ...) para pantallas mayores.
+Define estados :hover, :focus-visible y :active de forma explicita para todos los elementos interactivos.
+Respeta @media (prefers-reduced-motion: reduce) desactivando animaciones no esenciales.',
+  array['No enlaces hojas de estilo externas ni CDNs.', 'No uses !important salvo que sea imprescindible.', 'No uses unidades fijas en px para tipografia de cuerpo: usa rem.']::text[], array['CSS embebido en <style>, organizado por bloques comentados (tokens, base, layout, componentes, responsive).']::text[], array[]::text[],
+  5, true, true, 20, null
+) on conflict (id) do update set
+  name = excluded.name,
+  description = excluded.description,
+  category = excluded.category,
+  version = excluded.version,
+  prompt_instructions = excluded.prompt_instructions,
+  constraints = excluded.constraints,
+  output_requirements = excluded.output_requirements,
+  conflicts_with = excluded.conflicts_with,
+  priority = excluded.priority,
+  self_contained_preview = excluded.self_contained_preview,
+  sort_order = excluded.sort_order;
+
+insert into technologies (
+  id, slug, name, description, category, version, prompt_instructions,
+  constraints, output_requirements, conflicts_with, priority,
+  self_contained_preview, is_active, sort_order, owner_id
+) values (
+  'javascript', 'javascript', 'JavaScript', 'Interactividad ligera sin dependencias: menus, acordeones, validacion de formularios.',
+  'language'::technology_category, 'ES2022',
+  'Escribe JavaScript vanilla moderno dentro de una unica etiqueta <script> antes de </body>.
+Toda interaccion debe ser funcional de verdad: menu movil que abre y cierra, FAQ que despliega, formulario que valida y muestra feedback.
+Actualiza los atributos ARIA relevantes (aria-expanded, aria-hidden) al cambiar de estado.
+Asegura que la pagina sigue siendo legible y utilizable si el script falla.',
+  array['No uses librerias externas ni imports desde CDN.', 'No inventes llamadas a APIs inexistentes: los formularios se manejan en cliente con feedback simulado y explicito.', 'No uses alert() como mecanismo de feedback.']::text[], array['JavaScript embebido en <script>, sin dependencias, sin errores en consola.']::text[], array[]::text[],
+  5, true, true, 30, null
+) on conflict (id) do update set
+  name = excluded.name,
+  description = excluded.description,
+  category = excluded.category,
+  version = excluded.version,
+  prompt_instructions = excluded.prompt_instructions,
+  constraints = excluded.constraints,
+  output_requirements = excluded.output_requirements,
+  conflicts_with = excluded.conflicts_with,
+  priority = excluded.priority,
+  self_contained_preview = excluded.self_contained_preview,
+  sort_order = excluded.sort_order;
+
+insert into technologies (
+  id, slug, name, description, category, version, prompt_instructions,
+  constraints, output_requirements, conflicts_with, priority,
+  self_contained_preview, is_active, sort_order, owner_id
+) values (
+  'typescript', 'typescript', 'TypeScript', 'Tipado estatico para los ejemplos de codigo de componentes.',
+  'language'::technology_category, '5',
+  'Cuando generes componentes, tipa explicitamente props, estados y retornos.
+Evita `any`: usa tipos concretos, uniones literales o genericos.
+Exporta las interfaces de props junto al componente.',
+  array['No uses `any` ni `@ts-ignore`.', 'No declares tipos que no se utilicen.']::text[], array['Codigo TypeScript compilable, con interfaces de props exportadas.']::text[], array[]::text[],
+  20, false, true, 40, null
+) on conflict (id) do update set
+  name = excluded.name,
+  description = excluded.description,
+  category = excluded.category,
+  version = excluded.version,
+  prompt_instructions = excluded.prompt_instructions,
+  constraints = excluded.constraints,
+  output_requirements = excluded.output_requirements,
+  conflicts_with = excluded.conflicts_with,
+  priority = excluded.priority,
+  self_contained_preview = excluded.self_contained_preview,
+  sort_order = excluded.sort_order;
+
+insert into technologies (
+  id, slug, name, description, category, version, prompt_instructions,
+  constraints, output_requirements, conflicts_with, priority,
+  self_contained_preview, is_active, sort_order, owner_id
+) values (
+  'react', 'react', 'React', 'Componentes de interfaz mediante JSX y hooks.',
+  'library'::technology_category, '19',
+  'Estructura la landing en componentes con una unica responsabilidad (Hero, Features, Pricing, FAQ, CTA, Footer).
+Usa hooks para el estado local; no introduzcas gestores de estado globales.
+Las listas deben tener `key` estable y derivarse de datos declarados como constantes al inicio del archivo.',
+  array['No uses componentes de clase.', 'No introduzcas librerias de UI no solicitadas.']::text[], array['Componentes React exportados y ensamblados en un componente raiz de pagina.']::text[], array[]::text[],
+  30, false, true, 50, null
+) on conflict (id) do update set
+  name = excluded.name,
+  description = excluded.description,
+  category = excluded.category,
+  version = excluded.version,
+  prompt_instructions = excluded.prompt_instructions,
+  constraints = excluded.constraints,
+  output_requirements = excluded.output_requirements,
+  conflicts_with = excluded.conflicts_with,
+  priority = excluded.priority,
+  self_contained_preview = excluded.self_contained_preview,
+  sort_order = excluded.sort_order;
+
+insert into technologies (
+  id, slug, name, description, category, version, prompt_instructions,
+  constraints, output_requirements, conflicts_with, priority,
+  self_contained_preview, is_active, sort_order, owner_id
+) values (
+  'nextjs', 'nextjs', 'Next.js', 'App Router, Server Components y convenciones de archivos de Next.js.',
+  'framework'::technology_category, '15',
+  'Usa App Router: `app/page.tsx` como entrada y componentes en `components/`.
+Los componentes son Server Components por defecto; anade "use client" solo donde haya estado o eventos.
+Exporta `metadata` desde la pagina con title y description reales.
+Usa `next/image` para imagenes y `next/link` para navegacion interna.
+Ademas del codigo de Next.js, entrega SIEMPRE un documento HTML autocontenido equivalente para la vista previa.',
+  array['No uses `getServerSideProps` ni el Pages Router.', 'No inventes rutas de API que no se implementen.', 'No uses `dangerouslySetInnerHTML`.']::text[], array['Arbol de archivos comentado con el contenido de cada archivo.', 'Un documento HTML autocontenido equivalente para la vista previa.']::text[], array[]::text[],
+  40, false, true, 60, null
+) on conflict (id) do update set
+  name = excluded.name,
+  description = excluded.description,
+  category = excluded.category,
+  version = excluded.version,
+  prompt_instructions = excluded.prompt_instructions,
+  constraints = excluded.constraints,
+  output_requirements = excluded.output_requirements,
+  conflicts_with = excluded.conflicts_with,
+  priority = excluded.priority,
+  self_contained_preview = excluded.self_contained_preview,
+  sort_order = excluded.sort_order;
+
+insert into technologies (
+  id, slug, name, description, category, version, prompt_instructions,
+  constraints, output_requirements, conflicts_with, priority,
+  self_contained_preview, is_active, sort_order, owner_id
+) values (
+  'tailwindcss', 'tailwindcss', 'Tailwind CSS', 'Utilidades CSS. En modo preview se carga desde el runtime de navegador.',
+  'styling'::technology_category, '4',
+  'Aplica estilos exclusivamente con clases de utilidad de Tailwind.
+Define la paleta y la tipografia del proyecto con variables CSS en una capa @theme o en :root y referencialas desde las utilidades.
+Trabaja mobile-first usando los prefijos sm:, md:, lg: y xl:.
+Para la vista previa autocontenida, incluye el runtime de Tailwind mediante <script src="https://cdn.tailwindcss.com"></script> y la configuracion inline necesaria.
+Extrae patrones repetidos a componentes en lugar de duplicar cadenas de 20 utilidades.',
+  array['No mezcles CSS suelto con Tailwind salvo para keyframes o tokens.', 'No uses valores arbitrarios en exceso: prioriza la escala del sistema.']::text[], array['Marcado con clases de utilidad coherentes y una escala tipografica y de espaciado consistente.']::text[], array['bootstrap']::text[],
+  35, true, true, 70, null
+) on conflict (id) do update set
+  name = excluded.name,
+  description = excluded.description,
+  category = excluded.category,
+  version = excluded.version,
+  prompt_instructions = excluded.prompt_instructions,
+  constraints = excluded.constraints,
+  output_requirements = excluded.output_requirements,
+  conflicts_with = excluded.conflicts_with,
+  priority = excluded.priority,
+  self_contained_preview = excluded.self_contained_preview,
+  sort_order = excluded.sort_order;
+
+insert into technologies (
+  id, slug, name, description, category, version, prompt_instructions,
+  constraints, output_requirements, conflicts_with, priority,
+  self_contained_preview, is_active, sort_order, owner_id
+) values (
+  'bootstrap', 'bootstrap', 'Bootstrap', 'Sistema de rejilla y componentes predefinidos.',
+  'styling'::technology_category, '5.3',
+  'Usa la rejilla de Bootstrap (container, row, col-*) y sus utilidades de espaciado.
+Carga Bootstrap desde su CDN oficial en el <head> para que la vista previa funcione.
+Personaliza el aspecto con variables CSS propias para no entregar una pagina con el aspecto por defecto.',
+  array['No entregues una pagina con la estetica por defecto de Bootstrap sin personalizar.', 'No combines Bootstrap con Tailwind.']::text[], array['HTML con clases de Bootstrap y una capa de personalizacion visual propia.']::text[], array['tailwindcss']::text[],
+  35, true, true, 80, null
+) on conflict (id) do update set
+  name = excluded.name,
+  description = excluded.description,
+  category = excluded.category,
+  version = excluded.version,
+  prompt_instructions = excluded.prompt_instructions,
+  constraints = excluded.constraints,
+  output_requirements = excluded.output_requirements,
+  conflicts_with = excluded.conflicts_with,
+  priority = excluded.priority,
+  self_contained_preview = excluded.self_contained_preview,
+  sort_order = excluded.sort_order;
+
+insert into technologies (
+  id, slug, name, description, category, version, prompt_instructions,
+  constraints, output_requirements, conflicts_with, priority,
+  self_contained_preview, is_active, sort_order, owner_id
+) values (
+  'vue', 'vue', 'Vue', 'Componentes SFC con Composition API.',
+  'framework'::technology_category, '3',
+  'Usa Single File Components con <script setup> y Composition API.
+Separa la landing en componentes por seccion.
+Para la vista previa, entrega ademas un documento HTML autocontenido equivalente.',
+  array['No uses Options API.', 'No introduzcas Vuex ni Pinia para una landing estatica.']::text[], array['Componentes .vue y un HTML autocontenido equivalente para la vista previa.']::text[], array['react', 'nextjs']::text[],
+  40, false, true, 90, null
+) on conflict (id) do update set
+  name = excluded.name,
+  description = excluded.description,
+  category = excluded.category,
+  version = excluded.version,
+  prompt_instructions = excluded.prompt_instructions,
+  constraints = excluded.constraints,
+  output_requirements = excluded.output_requirements,
+  conflicts_with = excluded.conflicts_with,
+  priority = excluded.priority,
+  self_contained_preview = excluded.self_contained_preview,
+  sort_order = excluded.sort_order;
+
+insert into technologies (
+  id, slug, name, description, category, version, prompt_instructions,
+  constraints, output_requirements, conflicts_with, priority,
+  self_contained_preview, is_active, sort_order, owner_id
+) values (
+  'astro', 'astro', 'Astro', 'Sitios estaticos orientados a contenido con hidratacion parcial.',
+  'framework'::technology_category, '5',
+  'Usa componentes .astro y envia cero JavaScript al cliente salvo que una interaccion lo exija.
+Aplica hidratacion parcial (client:visible) unicamente donde sea imprescindible.
+Para la vista previa, entrega ademas un documento HTML autocontenido equivalente.',
+  array['No hidrates componentes estaticos.', 'No introduzcas frameworks de UI innecesarios.']::text[], array['Componentes .astro y un HTML autocontenido equivalente para la vista previa.']::text[], array['nextjs', 'vue']::text[],
+  40, false, true, 100, null
+) on conflict (id) do update set
+  name = excluded.name,
+  description = excluded.description,
+  category = excluded.category,
+  version = excluded.version,
+  prompt_instructions = excluded.prompt_instructions,
+  constraints = excluded.constraints,
+  output_requirements = excluded.output_requirements,
+  conflicts_with = excluded.conflicts_with,
+  priority = excluded.priority,
+  self_contained_preview = excluded.self_contained_preview,
+  sort_order = excluded.sort_order;
+
+insert into technologies (
+  id, slug, name, description, category, version, prompt_instructions,
+  constraints, output_requirements, conflicts_with, priority,
+  self_contained_preview, is_active, sort_order, owner_id
+) values (
+  'lucide', 'lucide', 'Lucide Icons', 'Iconografia de trazo consistente.',
+  'icons'::technology_category, '0.544',
+  'Usa iconos de Lucide unicamente cuando aporten significado funcional (estado, accion, categoria).
+En la vista previa autocontenida, inserta los iconos como SVG inline con stroke-width uniforme y `aria-hidden="true"` si son decorativos.
+Manten un unico tamano base de icono por contexto.',
+  array['No uses iconos como relleno decorativo en cada tarjeta.', 'No mezcles varias familias de iconos.']::text[], array['SVG inline coherentes con el resto del sistema visual.']::text[], array[]::text[],
+  15, true, true, 110, null
+) on conflict (id) do update set
+  name = excluded.name,
+  description = excluded.description,
+  category = excluded.category,
+  version = excluded.version,
+  prompt_instructions = excluded.prompt_instructions,
+  constraints = excluded.constraints,
+  output_requirements = excluded.output_requirements,
+  conflicts_with = excluded.conflicts_with,
+  priority = excluded.priority,
+  self_contained_preview = excluded.self_contained_preview,
+  sort_order = excluded.sort_order;
+
+-- ---------------------------------------------------------------------------
+-- Seed Strings (11)
+-- ---------------------------------------------------------------------------
+
+insert into seed_strings (id, name, category, value, description, directives, is_preset, owner_id) values (
+  'seed-swiss-editorial', 'Swiss Editorial', 'swiss'::seed_category,
+  'diseno suizo + retícula estricta + tipografia grotesca + jerarquia por tamano + blanco dominante',
+  'Orden, retícula visible y tipografia como protagonista. Cero ornamento.',
+  '{"composition":"Retícula de 12 columnas visible y respetada; margenes amplios y asimetria controlada.","typography":"Una unica familia grotesca (Helvetica/Inter) en 3 pesos; escala modular 1.25; interlineado generoso.","color":"Fondo blanco o hueso, texto casi negro y un unico acento saturado usado con moderacion.","hierarchy":"La jerarquia se construye con tamano y peso, nunca con color ni con cajas.","spacing":"Espaciado basado en multiplos de 8; el aire es un elemento de diseno, no un descuido.","imagery":"Fotografia en blanco y negro o diagramas geometricos planos, alineados a la retícula.","components":"Botones rectangulares o de radio minimo, separadores de 1px, sin sombras."}'::jsonb,
+  true, null
+) on conflict (id) do update set
+  name = excluded.name,
+  category = excluded.category,
+  value = excluded.value,
+  description = excluded.description,
+  directives = excluded.directives;
+
+insert into seed_strings (id, name, category, value, description, directives, is_preset, owner_id) values (
+  'seed-bauhaus', 'Bauhaus Funcional', 'bauhaus'::seed_category,
+  'Bauhaus + formas geometricas primarias + color primario + funcion sobre ornamento + composicion modular',
+  'Geometria primaria, color directo y estructura modular evidente.',
+  '{"composition":"Bloques rectangulares modulares; composicion asimetrica con tension entre masas.","typography":"Sans geometrica (Futura/Poppins) en mayusculas para titulos; cuerpo neutro.","color":"Rojo, azul y amarillo primarios sobre negro y blanco; maximo dos acentos por pantalla.","hierarchy":"Escala tipografica agresiva: titulares muy grandes frente a cuerpo pequeno.","spacing":"Retícula rigida sin espacios residuales; los bloques se tocan entre si.","imagery":"Formas geometricas planas (circulo, cuadrado, triangulo) como elementos compositivos.","components":"Botones solidos sin radio, bordes gruesos, cero sombras ni degradados."}'::jsonb,
+  true, null
+) on conflict (id) do update set
+  name = excluded.name,
+  category = excluded.category,
+  value = excluded.value,
+  description = excluded.description,
+  directives = excluded.directives;
+
+insert into seed_strings (id, name, category, value, description, directives, is_preset, owner_id) values (
+  'seed-industrial-lab', 'Laboratorio Industrial', 'industrial'::seed_category,
+  'laboratorio industrial + instrumentacion tecnica + etiquetas monoespaciadas + acero y ambar + precision documental',
+  'Estetica de instrumento de medida: datos, etiquetas y precision.',
+  '{"composition":"Bloques tabulares y paneles con divisiones marcadas, como un panel de control.","typography":"Monoespaciada para etiquetas, datos y metadatos; sans neutra para lectura.","color":"Grises acero, negro carbon y un ambar o verde fosforo como unico acento funcional.","hierarchy":"Etiquetas en mayusculas pequenas con letter-spacing sobre cada bloque de contenido.","spacing":"Densidad media-alta: la informacion se agrupa, no se dispersa.","imagery":"Diagramas tecnicos, lineas de medida, capturas de instrumentacion.","components":"Bordes de 1px, esquinas rectas, indicadores de estado, tablas de especificaciones."}'::jsonb,
+  true, null
+) on conflict (id) do update set
+  name = excluded.name,
+  category = excluded.category,
+  value = excluded.value,
+  description = excluded.description,
+  directives = excluded.directives;
+
+insert into seed_strings (id, name, category, value, description, directives, is_preset, owner_id) values (
+  'seed-documentary-tech', 'Tecnologia Documental', 'documentary'::seed_category,
+  'fotografia documental + tecnologia cotidiana + luz natural + texto sobrio + ausencia de artificio',
+  'Tecnologia contada con fotografia real y lenguaje sin exageracion.',
+  '{"composition":"Imagenes a sangre alternadas con columnas de texto estrechas y legibles.","typography":"Serif de lectura para el cuerpo y sans discreta para interfaz; medida de 60-70 caracteres.","color":"Paleta derivada de la fotografia: tierras, grises calidos, un acento apagado.","hierarchy":"El pie de foto y la entradilla hacen tanto trabajo como el titular.","spacing":"Ritmo vertical pausado, secciones largas, pocas interrupciones.","imagery":"Fotografia documental de personas usando el producto en contexto real.","components":"Enlaces subrayados, citas con filete lateral, sin tarjetas flotantes."}'::jsonb,
+  true, null
+) on conflict (id) do update set
+  name = excluded.name,
+  category = excluded.category,
+  value = excluded.value,
+  description = excluded.description,
+  directives = excluded.directives;
+
+insert into seed_strings (id, name, category, value, description, directives, is_preset, owner_id) values (
+  'seed-luxury-editorial', 'Lujo Editorial', 'luxury'::seed_category,
+  'lujo editorial + tipografia display serif + negro profundo + oro apagado + espacio como lujo',
+  'Contencion, espacio y materiales. El vacio comunica valor.',
+  '{"composition":"Composiciones centradas y simetricas con enormes margenes; una idea por pantalla.","typography":"Display serif de alto contraste para titulares; sans muy discreta para el resto.","color":"Negro profundo o crema, con un metalico apagado como unico acento.","hierarchy":"Pocos niveles; el salto entre titular y cuerpo es amplio.","spacing":"Espaciado extremo: el aire es el principal recurso expresivo.","imagery":"Fotografia de producto con luz dirigida, detalles de material y textura.","components":"Botones de contorno fino, letter-spacing amplio en mayusculas, sin sombras."}'::jsonb,
+  true, null
+) on conflict (id) do update set
+  name = excluded.name,
+  category = excluded.category,
+  value = excluded.value,
+  description = excluded.description,
+  directives = excluded.directives;
+
+insert into seed_strings (id, name, category, value, description, directives, is_preset, owner_id) values (
+  'seed-minimal-architecture', 'Arquitectura Minima', 'architecture'::seed_category,
+  'arquitectura contemporanea + hormigon y luz + planos y secciones + neutralidad cromatica + estructura visible',
+  'La estructura de la pagina se ve, como en un plano arquitectonico.',
+  '{"composition":"Lineas de construccion visibles: filetes que delimitan secciones y columnas.","typography":"Sans neutra de caja baja, tamanos contenidos, mucha coherencia.","color":"Hormigon, blanco roto y negro; acento reducido al minimo.","hierarchy":"Numeracion de secciones (01, 02, 03) como recurso de orden.","spacing":"Modulo constante; ningun elemento rompe la alineacion.","imagery":"Fotografia arquitectonica, planos, sombras duras.","components":"Separadores de 1px, tablas de datos, botones rectangulares."}'::jsonb,
+  true, null
+) on conflict (id) do update set
+  name = excluded.name,
+  category = excluded.category,
+  value = excluded.value,
+  description = excluded.description,
+  directives = excluded.directives;
+
+insert into seed_strings (id, name, category, value, description, directives, is_preset, owner_id) values (
+  'seed-retro-computing', 'Retro Computing', 'retro-tech'::seed_category,
+  'informatica de los 80 + terminal fosforo + pixel y monoespacio + interfaz de sistema + nostalgia funcional',
+  'Interfaz de terminal reinterpretada, no una parodia.',
+  '{"composition":"Ventanas y paneles con barra de titulo; contenido alineado a una retícula de caracteres.","typography":"Monoespaciada dominante; mayusculas para cabeceras de panel.","color":"Fondo muy oscuro con verde fosforo o ambar; blanco para texto principal.","hierarchy":"Prefijos tipo `>` y bloques delimitados por caracteres para marcar niveles.","spacing":"Rejilla apretada y regular, como una consola.","imagery":"ASCII, diagramas de bloques, capturas de terminal.","components":"Bordes dobles, cursores parpadeantes discretos, botones con estado invertido."}'::jsonb,
+  true, null
+) on conflict (id) do update set
+  name = excluded.name,
+  category = excluded.category,
+  value = excluded.value,
+  description = excluded.description,
+  directives = excluded.directives;
+
+insert into seed_strings (id, name, category, value, description, directives, is_preset, owner_id) values (
+  'seed-brutalist-web', 'Brutalismo Web', 'brutalist'::seed_category,
+  'brutalismo web + HTML crudo + contraste extremo + bordes gruesos + honestidad estructural',
+  'Materialidad del medio: se ve que es una pagina web y no se disimula.',
+  '{"composition":"Bloques apilados sin refinar, alineaciones deliberadamente duras.","typography":"Tipografias de sistema, tamanos exagerados, sin suavizado estetico.","color":"Contrastes maximos; un color saturado como choque visual.","hierarchy":"Jerarquia por tamano bruto y por bordes, no por sutileza.","spacing":"Espaciado irregular pero intencionado; nada de simetria complaciente.","imagery":"Imagenes sin recortar, capturas, elementos sin procesar.","components":"Bordes de 2-4px, cero radio, cero sombras, enlaces subrayados gruesos."}'::jsonb,
+  true, null
+) on conflict (id) do update set
+  name = excluded.name,
+  category = excluded.category,
+  value = excluded.value,
+  description = excluded.description,
+  directives = excluded.directives;
+
+insert into seed_strings (id, name, category, value, description, directives, is_preset, owner_id) values (
+  'seed-organic-technology', 'Tecnologia Organica', 'natural'::seed_category,
+  'tecnologia organica + materiales naturales + curvas suaves + paleta vegetal + calidez tactil',
+  'Producto tecnologico con lenguaje visual calido y natural.',
+  '{"composition":"Bloques con curvas amplias y transiciones suaves entre secciones.","typography":"Sans humanista de formas abiertas; interlineado amplio.","color":"Verdes apagados, arena, terracota; ningun neon.","hierarchy":"Titulares medianos con subtitulos descriptivos largos.","spacing":"Respiracion alta, sin densidad de dashboard.","imagery":"Texturas naturales, fotografia con luz difusa, ilustracion organica.","components":"Radios amplios pero consistentes, sombras muy suaves y escasas."}'::jsonb,
+  true, null
+) on conflict (id) do update set
+  name = excluded.name,
+  category = excluded.category,
+  value = excluded.value,
+  description = excluded.description,
+  directives = excluded.directives;
+
+insert into seed_strings (id, name, category, value, description, directives, is_preset, owner_id) values (
+  'seed-magazine-grid', 'Revista Contemporanea', 'magazine'::seed_category,
+  'revista contemporanea + retícula editorial + entradillas + fotografia a sangre + ritmo de lectura',
+  'Landing que se lee como un reportaje: entra por el contenido.',
+  '{"composition":"Retícula editorial con columnas de distinto ancho y despieces laterales.","typography":"Serif editorial para titulares, sans para metadatos; capitulares ocasionales.","color":"Papel claro, tinta oscura y un acento de portada.","hierarchy":"Antetitulo, titular, entradilla y cuerpo claramente diferenciados.","spacing":"Columnas estrechas, interlineado comodo, secciones largas.","imagery":"Fotografia a sangre con pie de foto real.","components":"Citas destacadas, filetes finos, listas numeradas."}'::jsonb,
+  true, null
+) on conflict (id) do update set
+  name = excluded.name,
+  category = excluded.category,
+  value = excluded.value,
+  description = excluded.description,
+  directives = excluded.directives;
+
+insert into seed_strings (id, name, category, value, description, directives, is_preset, owner_id) values (
+  'seed-experimental-grid', 'Retícula Experimental', 'experimental'::seed_category,
+  'retícula rota + superposicion + escala extrema + rotacion controlada + orden dentro del caos',
+  'Composicion arriesgada que sigue siendo navegable y accesible.',
+  '{"composition":"Superposiciones controladas y desplazamientos respecto a la retícula base.","typography":"Contrastes de escala extremos entre titular y cuerpo; algun elemento rotado.","color":"Dos colores dominantes en choque y un neutro de descanso.","hierarchy":"La jerarquia se mantiene aunque la composicion se rompa: el CTA nunca se pierde.","spacing":"Densidades alternas: zonas saturadas junto a zonas vacias.","imagery":"Recortes, mascaras y collage.","components":"Elementos que invaden secciones contiguas sin romper el flujo de lectura."}'::jsonb,
+  true, null
+) on conflict (id) do update set
+  name = excluded.name,
+  category = excluded.category,
+  value = excluded.value,
+  description = excluded.description,
+  directives = excluded.directives;
+
+-- ---------------------------------------------------------------------------
+-- Plantillas de prompt (9)
+-- ---------------------------------------------------------------------------
+
+insert into prompt_templates (id, key, name, kind, description, template, variables, is_active) values (
+  'landing-generator.system', 'landing-generator.system', 'Sistema: generador de Landing Pages',
+  'landing-generator'::prompt_template_kind,
+  'Instruccion de sistema que fija el rol y el formato de salida del generador.',
+  'Eres un equipo compuesto por un director de arte digital, un disenador de producto senior,
+un copywriter de conversion y un desarrollador front-end. Trabajas para clientes exigentes
+que rechazan resultados genericos.
+
+Reglas invariables:
+1. Devuelves UNICAMENTE codigo. Nunca escribes introducciones, explicaciones ni despedidas.
+2. La primera linea de tu respuesta es exactamente "<!DOCTYPE html>".
+3. La ultima linea de tu respuesta es exactamente "</html>".
+4. No envuelves la respuesta en bloques de markdown con acentos graves.
+5. Todo el contenido textual es real, concreto y especifico del proyecto: nunca lorem ipsum
+   ni marcadores de posicion.
+6. Cada interaccion que anuncias debe estar implementada y funcionar.
+7. Cumples las restricciones negativas del usuario como requisitos duros, no como sugerencias.',
+  array[]::text[], true
+) on conflict (id) do update set
+  name = excluded.name,
+  kind = excluded.kind,
+  description = excluded.description,
+  template = excluded.template,
+  variables = excluded.variables;
+
+insert into prompt_templates (id, key, name, kind, description, template, variables, is_active) values (
+  'discover.system', 'discover.system', 'Sistema: analisis DISCOVER',
+  'discover'::prompt_template_kind,
+  'Fase de descubrimiento: analiza nicho, publico y direcciones visuales.',
+  'Eres un estratega de producto digital. Analizas el encargo antes de disenar nada.
+Devuelves UNICAMENTE un objeto JSON valido, sin markdown ni texto adicional.
+Tu analisis es concreto: nada de generalidades aplicables a cualquier negocio.',
+  array[]::text[], true
+) on conflict (id) do update set
+  name = excluded.name,
+  kind = excluded.kind,
+  description = excluded.description,
+  template = excluded.template,
+  variables = excluded.variables;
+
+insert into prompt_templates (id, key, name, kind, description, template, variables, is_active) values (
+  'discover.user', 'discover.user', 'Usuario: analisis DISCOVER',
+  'discover'::prompt_template_kind,
+  'Peticion de analisis estrategico sobre el brief del proyecto.',
+  'Analiza este encargo de Landing Page:
+
+{{brief}}
+
+Devuelve este JSON exacto:
+{
+  "niche": "nicho concreto en una frase",
+  "audienceInsight": "que le preocupa realmente a este publico, en 2-3 frases",
+  "valueProposition": "propuesta de valor en una frase, sin adjetivos vacios",
+  "context": "contexto de mercado y momento de compra",
+  "differentiators": ["3-5 diferenciadores concretos"],
+  "visualDirections": ["3 direcciones visuales posibles, cada una en una frase"],
+  "marketSophistication": 3,
+  "frictions": ["3-5 objeciones o fricciones reales que frenan la conversion"]
+}
+
+marketSophistication va de 1 (mercado virgen) a 5 (mercado saturado de publicidad).',
+  array['brief']::text[], true
+) on conflict (id) do update set
+  name = excluded.name,
+  kind = excluded.kind,
+  description = excluded.description,
+  template = excluded.template,
+  variables = excluded.variables;
+
+insert into prompt_templates (id, key, name, kind, description, template, variables, is_active) values (
+  'critic.system', 'critic.system', 'Sistema: Critic Engine',
+  'ux-critic'::prompt_template_kind,
+  'Agente critico que audita la landing generada antes del refinamiento.',
+  'Eres un auditor independiente de producto digital. No disenaste esta pagina y no tienes
+ningun interes en defenderla. Auditas UX, accesibilidad (WCAG 2.1 AA), jerarquia visual,
+comportamiento responsive, claridad del copy, estrategia de CTA, calidad del codigo y
+presencia de patrones genericos de IA.
+
+Eres exigente pero util: cada problema que senalas incluye una accion concreta.
+No senalas problemas inventados ni repites el mismo problema con distintas palabras.
+Devuelves UNICAMENTE un objeto JSON valido, sin markdown ni texto adicional.',
+  array[]::text[], true
+) on conflict (id) do update set
+  name = excluded.name,
+  kind = excluded.kind,
+  description = excluded.description,
+  template = excluded.template,
+  variables = excluded.variables;
+
+insert into prompt_templates (id, key, name, kind, description, template, variables, is_active) values (
+  'critic.user', 'critic.user', 'Usuario: peticion de critica',
+  'ux-critic'::prompt_template_kind,
+  'Envia la landing y los requisitos para obtener issues, sugerencias y prompt de refinamiento.',
+  'REQUISITOS DEL PROYECTO
+{{requirements}}
+
+RESTRICCIONES QUE DEBIAN CUMPLIRSE
+{{constraints}}
+
+CODIGO A AUDITAR
+{{html}}
+
+Devuelve este JSON exacto:
+{
+  "issues": [
+    {
+      "dimension": "ux|accessibility|hierarchy|responsive|clarity|visual-consistency|cta|content|code|subtractive|generic-patterns",
+      "severity": "critical|high|medium|low",
+      "title": "titulo corto",
+      "description": "que falla y por que importa",
+      "location": "selector, seccion o fragmento afectado"
+    }
+  ],
+  "suggestions": [
+    {
+      "dimension": "misma lista que arriba",
+      "title": "titulo corto",
+      "action": "cambio concreto y accionable",
+      "impact": "alto|medio|bajo"
+    }
+  ],
+  "scores": { "overall": 0, "ux": 0, "accessibility": 0, "content": 0, "code": 0, "design": 0 },
+  "refinementPrompt": "instrucciones listas para regenerar la pagina corrigiendo lo anterior"
+}
+
+Las puntuaciones van de 0 a 100. Devuelve entre 3 y 12 issues.',
+  array['requirements', 'constraints', 'html']::text[], true
+) on conflict (id) do update set
+  name = excluded.name,
+  kind = excluded.kind,
+  description = excluded.description,
+  template = excluded.template,
+  variables = excluded.variables;
+
+insert into prompt_templates (id, key, name, kind, description, template, variables, is_active) values (
+  'refinement.user', 'refinement.user', 'Usuario: refinamiento',
+  'refinement'::prompt_template_kind,
+  'Regenera la landing aplicando unicamente los cambios aceptados.',
+  'Vas a corregir una Landing Page existente.
+
+ENCARGO ORIGINAL
+{{originalPrompt}}
+
+VERSION ACTUAL
+{{html}}
+
+CAMBIOS QUE DEBES APLICAR
+{{acceptedChanges}}
+
+INSTRUCCIONES ADICIONALES DEL USUARIO
+{{extraInstructions}}
+
+REGLAS DEL REFINAMIENTO
+- Aplica exactamente los cambios listados. No rediseñes lo que no se menciona.
+- Conserva el contenido, el tono y la identidad visual que ya funcionaban.
+- No introduzcas dependencias ni secciones nuevas que nadie ha pedido.
+- Devuelve el documento HTML completo y autocontenido, no un fragmento ni un diff.
+- Primera linea: <!DOCTYPE html>. Ultima linea: </html>. Sin markdown.',
+  array['acceptedChanges', 'extraInstructions', 'originalPrompt', 'html']::text[], true
+) on conflict (id) do update set
+  name = excluded.name,
+  kind = excluded.kind,
+  description = excluded.description,
+  template = excluded.template,
+  variables = excluded.variables;
+
+insert into prompt_templates (id, key, name, kind, description, template, variables, is_active) values (
+  'variation.user', 'variation.user', 'Usuario: generacion de variante',
+  'variation'::prompt_template_kind,
+  'Produce una variante de la landing segun una estrategia de diversificacion.',
+  'Vas a producir una VARIANTE de una Landing Page existente.
+
+ENCARGO ORIGINAL
+{{originalPrompt}}
+
+VERSION ACTUAL
+{{html}}
+
+ESTRATEGIA DE VARIACION: {{strategy}}
+{{strategyInstruction}}
+
+DIRECCION CREATIVA PARA ESTA VARIANTE
+{{seed}}
+
+NOTAS DEL USUARIO
+{{notes}}
+
+REGLAS
+- La variante debe ser reconociblemente distinta, no un ajuste cosmetico.
+- Manten la calidad, la accesibilidad y las restricciones negativas del encargo original.
+- Devuelve el documento HTML completo y autocontenido.
+- Primera linea: <!DOCTYPE html>. Ultima linea: </html>. Sin markdown.',
+  array['strategy', 'strategyInstruction', 'seed', 'notes', 'originalPrompt', 'html']::text[], true
+) on conflict (id) do update set
+  name = excluded.name,
+  kind = excluded.kind,
+  description = excluded.description,
+  template = excluded.template,
+  variables = excluded.variables;
+
+insert into prompt_templates (id, key, name, kind, description, template, variables, is_active) values (
+  'technology.combination', 'technology.combination', 'Composicion de tecnologias',
+  'technology-combination'::prompt_template_kind,
+  'Bloque que unifica las instrucciones de varias tecnologias y resuelve conflictos.',
+  'STACK: {{stack}}
+
+INSTRUCCIONES POR TECNOLOGIA
+{{instructions}}
+
+RESTRICCIONES TECNICAS
+{{constraints}}
+
+REQUISITOS DE SALIDA
+{{outputRequirements}}
+
+CONFLICTOS RESUELTOS
+{{conflicts}}',
+  array['stack', 'instructions', 'constraints', 'outputRequirements', 'conflicts']::text[], true
+) on conflict (id) do update set
+  name = excluded.name,
+  kind = excluded.kind,
+  description = excluded.description,
+  template = excluded.template,
+  variables = excluded.variables;
+
+insert into prompt_templates (id, key, name, kind, description, template, variables, is_active) values (
+  'code-reviewer.user', 'code-reviewer.user', 'Usuario: revision de codigo',
+  'code-reviewer'::prompt_template_kind,
+  'Revision centrada en calidad de codigo y semantica del HTML generado.',
+  'Revisa este documento HTML como haria un revisor de codigo senior.
+Busca: HTML no semantico, atributos de accesibilidad ausentes, CSS duplicado,
+JavaScript que falla, dependencias no declaradas y elementos que no hacen nada.
+
+{{html}}
+
+Devuelve JSON con la misma forma que el Critic Engine.',
+  array['html']::text[], true
+) on conflict (id) do update set
+  name = excluded.name,
+  kind = excluded.kind,
+  description = excluded.description,
+  template = excluded.template,
+  variables = excluded.variables;

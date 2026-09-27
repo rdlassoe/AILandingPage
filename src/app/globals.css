@@ -1,0 +1,161 @@
+@import 'tailwindcss';
+
+/* ===========================================================================
+   AI Landing Studio - sistema visual
+   Herramienta creativa + IDE profesional. Sin degradados, sin glassmorphism,
+   sin sombras difusas: superficie, linea de 1px y jerarquia tipografica.
+   =========================================================================== */
+
+:root {
+  --bg: #fbfaf8;
+  --panel: #ffffff;
+  --panel-2: #f3f1ed;
+  --ink: #15161a;
+  --muted: #62646c;
+  --faint: #8d8f97;
+  --line: #e2e0da;
+  --line-strong: #c9c6be;
+  --accent: #2740e8;
+  --accent-ink: #ffffff;
+  --accent-soft: #e8ebfe;
+  --ok: #1a7f4b;
+  --ok-soft: #e3f3ea;
+  --warn: #a35a06;
+  --warn-soft: #fbeedb;
+  --danger: #b3261e;
+  --danger-soft: #fbe6e4;
+
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, 'SFMono-Regular', 'Cascadia Mono', Consolas, 'Liberation Mono', monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f1012;
+    --panel: #17181c;
+    --panel-2: #1e2025;
+    --ink: #eceef2;
+    --muted: #9ba0a9;
+    --faint: #6f747d;
+    --line: #2a2d33;
+    --line-strong: #3a3e46;
+    --accent: #7b8cff;
+    --accent-ink: #10121a;
+    --accent-soft: #1b2040;
+    --ok: #55c78c;
+    --ok-soft: #12271c;
+    --warn: #e0a34a;
+    --warn-soft: #2a2010;
+    --danger: #f08b84;
+    --danger-soft: #2c1513;
+  }
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-panel: var(--panel);
+  --color-panel-2: var(--panel-2);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-accent: var(--accent);
+  --color-accent-ink: var(--accent-ink);
+  --color-accent-soft: var(--accent-soft);
+  --color-ok: var(--ok);
+  --color-ok-soft: var(--ok-soft);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+
+  --radius-xs: 2px;
+  --radius-sm: 3px;
+  --radius-md: 4px;
+  --radius-lg: 6px;
+}
+
+@layer base {
+  * {
+    border-color: var(--line);
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    font-size: 0.9375rem;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    letter-spacing: -0.021em;
+    font-weight: 600;
+    line-height: 1.2;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+
+  ::selection {
+    background: var(--accent-soft);
+    color: var(--ink);
+  }
+
+  /* Scrollbars discretas y coherentes con el tema */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--line-strong) transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  *::-webkit-scrollbar-thumb {
+    background: var(--line-strong);
+    border: 3px solid var(--bg);
+    border-radius: 6px;
+  }
+}
+
+@layer components {
+  /* Etiqueta de seccion, usada en cabeceras de panel */
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+    color: var(--faint);
+  }
+
+  /* Barra de progreso del asistente de proyecto */
+  .stepline {
+    counter-reset: step;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
