@@ -3,15 +3,34 @@ import 'server-only';
 import type { DataStore } from '@/lib/data/types';
 import { AppException, notFound } from '@/lib/errors';
 import { truncate } from '@/lib/utils';
+import { resolveProvider } from '@/lib/llm/registry';
 import { runLLM } from '@/services/llm-orchestrator';
 import { validateLandingOutput } from '@/services/output-validator';
-import { buildLandingPrompt, DEFAULT_TECHNIQUE_IDS, generatedSeedResolution } from '@/services/prompt-engine';
-import { VARIATION_STRATEGIES, type Generation, type LandingPage, type Project, type PromptSectionId } from '@/types/domain';
+import {
+  buildLandingPrompt,
+  composePromptViaLLM,
+  DEFAULT_SYSTEM_INSTRUCTION,
+  DEFAULT_TECHNIQUE_IDS,
+  generateRandomSeedForMock,
+  generateRandomSeedString,
+  renderSeedBlock,
+} from '@/services/prompt-engine';
+import {
+  VARIATION_STRATEGIES,
+  type Generation,
+  type LandingPage,
+  type Project,
+  type PromptSection,
+  type PromptSectionId,
+} from '@/types/domain';
 import type { LLMGenerationConfig, ProviderId } from '@/types/llm';
 import type {
   BuiltPrompt,
+  ComposePromptInput,
+  ComposePromptResult,
   GenerateLandingInput,
   GenerateLandingResult,
+  RandomSeedResult,
   RefineInput,
   VariationInput,
 } from '@/types/services';
@@ -33,25 +52,199 @@ export interface GenerationContext {
   store: DataStore;
 }
 
-/** Paso 1-6: reconstruye el prompt canonico del proyecto. */
+/**
+ * Paso 1-6: compone el prompt canonico del proyecto.
+ *
+ * La Seed ya no es una eleccion del proyecto: es un string aleatorio nuevo
+ * en CADA ejecucion (tecnica String Seed of Thought). Con un proveedor real
+ * lo genera un LLM (`generateRandomSeedString`); en modo demo, o si el
+ * proveedor pedido no esta configurado y acabara degradando a demo,
+ * `generateRandomSeedForMock` hace lo mismo con `crypto.randomBytes`, sin
+ * LLM.
+ *
+ * Con el modo demo, el prompt en si sigue siendo el que produce
+ * `buildLandingPrompt`: una funcion de codigo, determinista y gratuita (la
+ * Seed es lo unico que varia entre ejecuciones). Con un proveedor real,
+ * `composePromptViaLLM` ademas reescribe ese borrador entero como el prompt
+ * final de 17 secciones, manipulando el string aleatorio para derivar la
+ * direccion creativa.
+ *
+ * Si la composicion falla o el modelo no respeta el formato, se cae al
+ * borrador determinista: nunca se deja al usuario sin prompt.
+ */
 export async function buildPromptForProject(
   ctx: GenerationContext,
   project: Project,
-  options: { customSeedValue?: string | null } = {},
+  options: { providerId?: ProviderId; model?: string } = {},
 ): Promise<BuiltPrompt> {
   const technologies = await ctx.store.getTechnologiesByIds(project.technical.technologyIds);
-  const seed = project.seedStringId ? await ctx.store.getSeed(project.seedStringId) : null;
 
-  return buildLandingPrompt({
+  // `resolveProvider` es la MISMA funcion que usara el orquestador al
+  // ejecutar de verdad: si el proveedor pedido no esta configurado, aqui
+  // tambien se trata como demo. Evita mandarle al Mock Provider un prompt de
+  // "genera un string aleatorio" o "reescribe este prompt": Mock interpreta
+  // el texto para decidir que responder, y esas formas no las reconoce.
+  const { provider } = resolveProvider(options.providerId);
+  const usesRealLLM = provider.id !== 'mock';
+
+  const seed = usesRealLLM
+    ? await generateRandomSeedWithTracking(ctx, project, options)
+    : generateRandomSeedForMock();
+
+  const draft = buildLandingPrompt({
     project,
     technologies,
-    seed,
-    customSeedValue: options.customSeedValue ?? project.seedStringValue,
+    randomSeedString: seed.randomString,
     negativeConstraints: project.negativeConstraints,
     designTechniques: DEFAULT_TECHNIQUE_IDS,
     discover: project.discover,
     define: project.define,
   });
+
+  if (!usesRealLLM) return draft;
+
+  const generation = await ctx.store.createGeneration(ctx.ownerId, {
+    projectId: project.id,
+    promptId: null,
+    promptVersionId: null,
+    kind: 'prompt_generation',
+    providerId: options.providerId ?? 'mock',
+    model: options.model ?? '',
+    status: 'pending',
+    isMock: false,
+    latencyMs: 0,
+    inputTokens: null,
+    outputTokens: null,
+    errorCode: null,
+    errorMessage: null,
+    warnings: [],
+    landingPageId: null,
+    config: null,
+    cacheKey: null,
+    servedFromCache: false,
+  });
+
+  try {
+    const composed = await composePromptViaLLM(
+      { ownerId: ctx.ownerId, providerId: options.providerId, model: options.model },
+      draft,
+    );
+    await ctx.store.updateGeneration(ctx.ownerId, generation.id, {
+      status: 'success',
+      providerId: composed.providerId,
+      model: composed.model,
+      isMock: composed.isMock,
+      latencyMs: composed.latencyMs,
+      inputTokens: composed.inputTokens,
+      outputTokens: composed.outputTokens,
+      cacheKey: composed.cacheKey,
+    });
+    return composed.built;
+  } catch (error) {
+    await ctx.store.updateGeneration(ctx.ownerId, generation.id, {
+      status: 'error',
+      errorCode: 'prompt_generation_failed',
+      errorMessage: error instanceof Error ? error.message : 'Error desconocido',
+    });
+    // Red de seguridad: el borrador determinista sigue siendo un prompt
+    // valido y completo, solo que no lo redacto el LLM.
+    return draft;
+  }
+}
+
+/**
+ * Compone el prompt final del proyecto (igual que `buildPromptForProject`) y
+ * lo persiste como `prompt_version`, sin generar todavia ninguna Landing
+ * Page. Permite mostrarle al usuario el prompt REAL (con LLM si aplica) antes
+ * de gastar la llamada, mas cara, que genera el HTML.
+ *
+ * `generateLanding` puede recibir el `promptVersionId` que esto devuelve para
+ * saltarse la composicion y generar directo a partir de el.
+ */
+export async function composeAndPersistPrompt(
+  ctx: GenerationContext,
+  input: ComposePromptInput,
+): Promise<ComposePromptResult> {
+  const project = await ctx.store.getProject(ctx.ownerId, input.projectId);
+  if (!project) throw notFound('ese proyecto');
+  assertProjectIsGeneratable(project);
+
+  const built = await buildPromptForProject(ctx, project, { providerId: input.providerId, model: input.model });
+  const prompt = await ensurePrompt(ctx, project, input.promptId, built.technologyIds);
+
+  const promptVersion = await ctx.store.createPromptVersion(ctx.ownerId, {
+    promptId: prompt.id,
+    content: built.content,
+    systemInstruction: built.systemInstruction,
+    sections: built.sections,
+    technologyIds: built.technologyIds,
+    seedStringValue: built.seedStringValue,
+    negativeConstraints: built.negativeConstraints,
+    conflicts: built.conflicts,
+    providerId: input.providerId ?? null,
+    model: input.model ?? null,
+    config: null,
+    changeNote: 'Prompt generado por el Prompt Engine',
+  });
+
+  return { built, promptId: prompt.id, promptVersionId: promptVersion.id };
+}
+
+/** Envuelve `generateRandomSeedString` dejando registro en `generations` (kind: 'seed'). */
+async function generateRandomSeedWithTracking(
+  ctx: GenerationContext,
+  project: Project,
+  options: { providerId?: ProviderId; model?: string },
+): Promise<RandomSeedResult> {
+  const generation = await ctx.store.createGeneration(ctx.ownerId, {
+    projectId: project.id,
+    promptId: null,
+    promptVersionId: null,
+    kind: 'seed',
+    providerId: options.providerId ?? 'mock',
+    model: options.model ?? '',
+    status: 'pending',
+    isMock: false,
+    latencyMs: 0,
+    inputTokens: null,
+    outputTokens: null,
+    errorCode: null,
+    errorMessage: null,
+    warnings: [],
+    landingPageId: null,
+    config: null,
+    cacheKey: null,
+    servedFromCache: false,
+  });
+
+  try {
+    const { result, ...outcome } = await generateRandomSeedString({
+      ownerId: ctx.ownerId,
+      providerId: options.providerId,
+      model: options.model,
+    });
+    await ctx.store.updateGeneration(ctx.ownerId, generation.id, {
+      status: 'success',
+      providerId: outcome.providerId,
+      model: outcome.model,
+      isMock: result.isMock,
+      latencyMs: outcome.latencyMs,
+      inputTokens: outcome.inputTokens,
+      outputTokens: outcome.outputTokens,
+      cacheKey: outcome.cacheKey,
+    });
+    return result;
+  } catch (error) {
+    await ctx.store.updateGeneration(ctx.ownerId, generation.id, {
+      status: 'error',
+      errorCode: 'seed_generation_failed',
+      errorMessage: error instanceof Error ? error.message : 'Error desconocido',
+    });
+    // Red de seguridad: cualquier string aleatorio sirve como fuente de
+    // entropia para la tecnica SSoT — si el LLM falla, el PRNG del servidor
+    // (crypto.randomBytes) cubre el mismo papel sin dejar la Seed vacia.
+    return generateRandomSeedForMock();
+  }
 }
 
 /**
@@ -70,6 +263,13 @@ export async function buildPromptForProject(
  *
  * El orden y los titulos se conservan porque el Mock Provider reconstruye el
  * brief leyendo estas mismas cabeceras.
+ *
+ * IMPORTANTE: el brief se extrae de las `sections` YA GUARDADAS en la
+ * `prompt_version` de la Landing Page que se esta refinando o variando —
+ * nunca recomponiendo el prompt de nuevo. Desde que el prompt lo puede
+ * escribir un LLM, volver a componerlo dana dos veces: gasta dos llamadas
+ * mas solo para extraer un fragmento, y como ya no es determinista, el
+ * brief podria no coincidir con el que realmente produjo el HTML actual.
  */
 const BRIEF_SECTIONS: PromptSectionId[] = [
   'CONTEXT',
@@ -81,10 +281,16 @@ const BRIEF_SECTIONS: PromptSectionId[] = [
   'NEGATIVE_CONSTRAINTS',
 ];
 
-function renderBrief(built: BuiltPrompt): string {
-  const sections = built.sections.filter((section) => BRIEF_SECTIONS.includes(section.id));
-  if (sections.length === 0) return built.content;
-  return sections.map((section) => `## ${section.title}\n${section.body}`).join('\n\n');
+function renderBrief(sections: PromptSection[], fallbackContent: string): string {
+  const filtered = sections.filter((section) => BRIEF_SECTIONS.includes(section.id));
+  if (filtered.length === 0) return fallbackContent;
+  return filtered.map((section) => `## ${section.title}\n${section.body}`).join('\n\n');
+}
+
+/** Version del prompt que produjo la Landing Page actual, si sigue existiendo. */
+async function getSourcePromptVersion(ctx: GenerationContext, landing: LandingPage) {
+  if (!landing.promptVersionId) return null;
+  return ctx.store.getPromptVersion(ctx.ownerId, landing.promptVersionId);
 }
 
 export async function generateLanding(
@@ -96,15 +302,71 @@ export async function generateLanding(
   if (!project) throw notFound('ese proyecto');
   assertProjectIsGeneratable(project);
 
-  // Pasos 2-6: construir el prompt canonico
-  const built = await buildPromptForProject(ctx, project);
+  // Camino nuevo: el prompt ya se compuso y persistio de antemano (Prompt
+  // Studio: "Componer prompt final") via `composeAndPersistPrompt`. Se genera
+  // directo a partir de esa version, sin recomponer nada. `promptId` se
+  // deriva de la propia version, asi que compositor y generador quedan
+  // atados al mismo Prompt sin volver a invocar `ensurePrompt`.
+  if (input.promptVersionId) {
+    const existing = await ctx.store.getPromptVersion(ctx.ownerId, input.promptVersionId);
+    if (!existing) throw notFound('esa version de prompt');
+
+    const promptContent = input.promptContent?.trim() || existing.content;
+    const systemInstruction = input.systemInstruction?.trim() || existing.systemInstruction;
+    const edited = promptContent !== existing.content;
+
+    const version = edited
+      ? await ctx.store.createPromptVersion(ctx.ownerId, {
+          promptId: existing.promptId,
+          content: promptContent,
+          systemInstruction,
+          sections: existing.sections,
+          technologyIds: existing.technologyIds,
+          seedStringValue: existing.seedStringValue,
+          negativeConstraints: existing.negativeConstraints,
+          conflicts: existing.conflicts,
+          providerId: input.providerId ?? null,
+          model: input.model ?? null,
+          config: (input.config as LLMGenerationConfig | undefined) ?? null,
+          changeNote: 'Prompt editado manualmente en el Prompt Studio',
+        })
+      : existing;
+
+    return runGeneration(ctx, {
+      project,
+      promptId: version.promptId,
+      promptVersionId: version.id,
+      system: systemInstruction,
+      prompt: promptContent,
+      providerId: input.providerId,
+      model: input.model,
+      config: input.config,
+      kind: 'landing',
+      label: input.label ?? 'Generacion desde el Prompt Engine',
+      allowCache: input.allowCache ?? false,
+      technologyIds: version.technologyIds,
+      seedStringValue: version.seedStringValue,
+      existingLandingId: null,
+    });
+  }
+
+  // Camino actual (compatibilidad): sin promptVersionId, compone y genera en
+  // la misma llamada. Sin cambios.
+  //
+  // Pasos 2-6: construir el prompt canonico. Se calcula aunque el usuario
+  // haya editado el prompt a mano (ver mas abajo): ademas del texto, aporta
+  // metadatos que se guardan con la version (stack resuelto, Seed, secciones).
+  // Nota de coste: si el usuario edito el prompt, esas dos llamadas al LLM
+  // (Seed + composicion) se gastan solo para esos metadatos, no para el
+  // texto final. Es un coste conocido, no un error.
+  const built = await buildPromptForProject(ctx, project, { providerId: input.providerId, model: input.model });
 
   const promptContent = input.promptContent?.trim() || built.content;
   const systemInstruction = input.systemInstruction?.trim() || built.systemInstruction;
   const edited = promptContent !== built.content;
 
   // Persistencia del prompt y de su version (trazabilidad landing <-> prompt)
-  const prompt = await ensurePrompt(ctx, project, input.promptId, built);
+  const prompt = await ensurePrompt(ctx, project, input.promptId, built.technologyIds);
   const promptVersion = await ctx.store.createPromptVersion(ctx.ownerId, {
     promptId: prompt.id,
     content: promptContent,
@@ -161,13 +423,16 @@ export async function refineLanding(
     });
   }
 
-  const built = await buildPromptForProject(ctx, project);
+  // El brief sale de la version guardada que realmente produjo `landing.html`,
+  // no de recomponer el prompt de nuevo (ver nota en `getSourcePromptVersion`).
+  const sourceVersion = await getSourcePromptVersion(ctx, landing);
+  const systemInstruction = sourceVersion?.systemInstruction || DEFAULT_SYSTEM_INSTRUCTION;
 
   const refinementPrompt = [
     'Vas a corregir una Landing Page existente.',
     '',
     '## ENCARGO ORIGINAL',
-    renderBrief(built),
+    renderBrief(sourceVersion?.sections ?? [], landing.html),
     '',
     '## VERSION ACTUAL',
     landing.html,
@@ -187,14 +452,14 @@ export async function refineLanding(
   ].join('\n');
 
   const promptVersion = await ctx.store.createPromptVersion(ctx.ownerId, {
-    promptId: landing.promptId ?? (await ensurePrompt(ctx, project, undefined, built)).id,
+    promptId: landing.promptId ?? (await ensurePrompt(ctx, project, undefined, landing.technologyIds)).id,
     content: refinementPrompt,
-    systemInstruction: built.systemInstruction,
-    sections: built.sections,
-    technologyIds: built.technologyIds,
-    seedStringValue: built.seedStringValue,
-    negativeConstraints: built.negativeConstraints,
-    conflicts: built.conflicts,
+    systemInstruction,
+    sections: sourceVersion?.sections ?? [],
+    technologyIds: landing.technologyIds,
+    seedStringValue: landing.metadata.seedStringValue,
+    negativeConstraints: sourceVersion?.negativeConstraints ?? project.negativeConstraints,
+    conflicts: sourceVersion?.conflicts ?? [],
     providerId: input.providerId ?? null,
     model: input.model ?? null,
     config: null,
@@ -205,7 +470,7 @@ export async function refineLanding(
     project,
     promptId: promptVersion.promptId,
     promptVersionId: promptVersion.id,
-    system: built.systemInstruction,
+    system: systemInstruction,
     prompt: refinementPrompt,
     providerId: input.providerId,
     model: input.model,
@@ -231,20 +496,36 @@ export async function generateVariation(
   const strategy = VARIATION_STRATEGIES.find((item) => item.id === input.strategy);
   if (!strategy) throw new AppException({ code: 'validation', message: 'Estrategia de variacion desconocida.' });
 
-  // Estrategia SSoT: para "mismo contenido, nueva Seed" se genera una Seed
-  // interna que diversifica la salida sin mostrarsela al usuario.
+  // Estrategia SSoT: para "mismo contenido, nueva Seed" se genera un nuevo
+  // string aleatorio (con la tecnica real si el proveedor esta configurado,
+  // o su equivalente PRNG en modo demo) que sustituye al del encargo original.
   const useNewSeed = input.strategy === 'same-content-new-seed' || input.strategy === 'experimental';
-  const seedResolution = useNewSeed ? generatedSeedResolution() : null;
+  const { provider } = resolveProvider(input.providerId);
+  const freshSeed = useNewSeed
+    ? provider.id !== 'mock'
+      ? await generateRandomSeedWithTracking(ctx, project, { providerId: input.providerId, model: input.model })
+      : generateRandomSeedForMock()
+    : null;
 
-  const built = await buildPromptForProject(ctx, project, {
-    customSeedValue: seedResolution?.value ?? project.seedStringValue,
-  });
+  // El brief sale de la version guardada que realmente produjo `landing.html`
+  // (misma razon que en `refineLanding`): recomponerlo de nuevo costaria dos
+  // llamadas mas y podria no coincidir con lo que de verdad genero el HTML.
+  const sourceVersion = await getSourcePromptVersion(ctx, landing);
+  const systemInstruction = sourceVersion?.systemInstruction || DEFAULT_SYSTEM_INSTRUCTION;
+  const seedStringValue = freshSeed?.randomString ?? landing.metadata.seedStringValue;
 
   const variationPrompt = [
     'Vas a producir una VARIANTE de una Landing Page existente.',
     '',
     '## ENCARGO ORIGINAL',
-    renderBrief(built),
+    renderBrief(sourceVersion?.sections ?? [], landing.html),
+    ...(freshSeed
+      ? [
+          '',
+          '## NUEVA DIRECCION CREATIVA (sustituye a la Seed del encargo original)',
+          renderSeedBlock(freshSeed.randomString),
+        ]
+      : []),
     '',
     '## VERSION ACTUAL',
     landing.html,
@@ -263,14 +544,14 @@ export async function generateVariation(
   ].join('\n');
 
   const promptVersion = await ctx.store.createPromptVersion(ctx.ownerId, {
-    promptId: landing.promptId ?? (await ensurePrompt(ctx, project, undefined, built)).id,
+    promptId: landing.promptId ?? (await ensurePrompt(ctx, project, undefined, landing.technologyIds)).id,
     content: variationPrompt,
-    systemInstruction: built.systemInstruction,
-    sections: built.sections,
-    technologyIds: built.technologyIds,
-    seedStringValue: built.seedStringValue,
-    negativeConstraints: built.negativeConstraints,
-    conflicts: built.conflicts,
+    systemInstruction,
+    sections: sourceVersion?.sections ?? [],
+    technologyIds: landing.technologyIds,
+    seedStringValue,
+    negativeConstraints: sourceVersion?.negativeConstraints ?? project.negativeConstraints,
+    conflicts: sourceVersion?.conflicts ?? [],
     providerId: input.providerId ?? null,
     model: input.model ?? null,
     config: null,
@@ -281,7 +562,7 @@ export async function generateVariation(
     project,
     promptId: promptVersion.promptId,
     promptVersionId: promptVersion.id,
-    system: built.systemInstruction,
+    system: systemInstruction,
     prompt: variationPrompt,
     providerId: input.providerId,
     model: input.model,
@@ -289,7 +570,7 @@ export async function generateVariation(
     label: strategy.label,
     allowCache: false,
     technologyIds: landing.technologyIds,
-    seedStringValue: built.seedStringValue,
+    seedStringValue,
     // Una variante es una Landing Page nueva, no una version de la anterior.
     existingLandingId: null,
     nameSuffix: strategy.label,
@@ -523,7 +804,7 @@ async function ensurePrompt(
   ctx: GenerationContext,
   project: Project,
   promptId: string | undefined,
-  built: BuiltPrompt,
+  technologyIds: string[],
 ) {
   if (promptId) {
     const existing = await ctx.store.getPrompt(ctx.ownerId, promptId);
@@ -538,7 +819,7 @@ async function ensurePrompt(
     projectId: project.id,
     name: `Prompt de ${project.basics.name}`,
     description: `Generado por el Prompt Engine para ${project.basics.theme}`,
-    technologyIds: built.technologyIds,
+    technologyIds,
     tags: [project.basics.landingType],
   });
 }

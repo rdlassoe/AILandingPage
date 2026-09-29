@@ -111,7 +111,6 @@ export async function critiqueLanding(
         `CTA principal: ${project.basics.primaryCta}`,
         `Estilo pedido: ${project.visual.style}`,
         `Tono: ${project.content.tone}`,
-        project.seedStringValue ? `Seed String: ${project.seedStringValue}` : '',
       ]
         .filter(Boolean)
         .join('\n')

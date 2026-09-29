@@ -63,7 +63,6 @@ export function GlobalSearch() {
         { label: 'Landing Pages', items: results.landingPages.map((l) => ({ id: l.id, name: l.name, href: `/library/${l.id}` })) },
         { label: 'Prompts', items: results.prompts.map((p) => ({ id: p.id, name: p.name, href: `/projects/${p.projectId ?? ''}` })) },
         { label: 'Tecnologias', items: results.technologies.map((t) => ({ id: t.id, name: t.name, href: '/technologies' })) },
-        { label: 'Seeds', items: results.seeds.map((s) => ({ id: s.id, name: s.name, href: '/seeds' })) },
       ].filter((group) => group.items.length > 0)
     : [];
 

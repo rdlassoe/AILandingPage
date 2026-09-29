@@ -48,6 +48,26 @@ export function resolveProvider(requested?: ProviderId | null): {
   return { provider: registry.mock, fellBackToMock: true, requested: wanted };
 }
 
+export interface ProviderStatus {
+  id: ProviderId;
+  label: string;
+  configured: boolean;
+}
+
+/**
+ * Resumen minimo y siempre sincrono (sin `listAvailableModels()`, que para
+ * Ollama consulta la red): pensado para el layout, que se evalua en cada
+ * pagina del area privada y no puede pagar esa latencia solo para pintar el
+ * indicador de proveedor de la barra lateral.
+ */
+export function listProviderStatuses(): ProviderStatus[] {
+  return listProviders().map((provider) => ({
+    id: provider.id,
+    label: provider.label,
+    configured: provider.isConfigured(),
+  }));
+}
+
 export interface ProviderSummary {
   id: ProviderId;
   label: string;

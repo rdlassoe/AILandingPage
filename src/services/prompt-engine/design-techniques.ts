@@ -1,10 +1,96 @@
 import type { DesignTechnique, DesignTechniqueId } from '@/types/services';
 
 /**
- * Tecnicas de diseno que el usuario puede activar o desactivar en el
- * Prompt Studio. Cada una inyecta un bloque concreto en el prompt final.
+ * Las 8 tecnicas de "Tratado Practico: 8 Tecnicas Avanzadas de Diseno de
+ * Landing Pages con IA" (docs/8 Tecnicas Avanzadas...pdf), seleccionables y
+ * combinables desde el Prompt Studio. Cada una inyecta un bloque concreto en
+ * el prompt final.
+ *
+ * Dos no se ejecutan de verdad: la app no integra ningun modelo de imagen ni
+ * de video, asi que "Generacion de imagenes/video" piden una DESCRIPCION
+ * detallada del activo (como comentario junto al elemento), no el archivo.
+ * Generarlo de verdad queda para quien reciba ese prompt como entrada a
+ * Midjourney/DALL-E/Runway.
+ *
+ * "Restricciones Negativas" del PDF no es un toggle aqui: el prompt ya trae
+ * una seccion NEGATIVE_CONSTRAINTS siempre presente y editable por proyecto.
+ * Esta tecnica anade severidad extra sobre esa base, no la sustituye.
  */
 export const DESIGN_TECHNIQUES: DesignTechnique[] = [
+  {
+    id: 'seed-strings',
+    label: 'Cadenas Semilla (SSoT)',
+    summary: 'Ancla la Seed derivada por la tecnica a decisiones concretas, no a decoracion.',
+    defaultEnabled: true,
+    instruction: [
+      'La Seed String no es un adorno tematico: es la direccion creativa.',
+      'Debe cambiar decisiones concretas de composicion, retícula, escala tipografica,',
+      'paleta, densidad de informacion, tratamiento de imagen y estilo de los componentes.',
+      'Si la pagina resultante podria haberse generado con cualquier otra Seed,',
+      'no has aplicado la Seed.',
+    ].join('\n'),
+  },
+  {
+    id: 'ambitious-prompts',
+    label: 'Prompts Ambiciosos',
+    summary: 'Psicologia del usuario, sesgos cognitivos y friccion a eliminar, no solo estetica.',
+    defaultEnabled: false,
+    instruction: [
+      'No te limites a describir el aspecto visual: define tambien la psicologia del',
+      'usuario, el nivel de sofisticacion del mercado, los sesgos cognitivos que puedes',
+      'aprovechar de forma honesta y la friccion concreta que vas a eliminar.',
+      '',
+      'Para cada seccion del scroll, ten decidida (aunque no la escribas explicita en el',
+      'HTML): que respuesta emocional exacta buscas y que objecion resuelve.',
+      'Pasa de descripciones esteticas a descripciones funcionales: micro-copy real,',
+      'no adjetivos.',
+    ].join('\n'),
+  },
+  {
+    id: 'subagent-feedback',
+    label: 'Bucles con subagentes',
+    summary: 'Auto-audita el resultado bajo criterios de UX y persuasion antes de entregarlo.',
+    defaultEnabled: false,
+    instruction: [
+      'Antes de dar tu respuesta por definitiva, actua como tu propio critico:',
+      'revisa el diseno que ibas a entregar bajo criterios de UX, accesibilidad y',
+      'persuasion, identifica al menos 3 puntos de friccion donde un usuario podria',
+      'abandonar, y corrigelos en la version que realmente entregas.',
+      'No expliques esta auto-revision en la respuesta: aplica sus conclusiones',
+      'directamente al HTML final.',
+    ].join('\n'),
+  },
+  {
+    id: 'image-generation',
+    label: 'Generacion de imagenes',
+    summary: 'Describe cada imagen como un prompt listo para Midjourney/DALL-E, no la genera.',
+    defaultEnabled: false,
+    instruction: [
+      'No uses fotografia de stock generica. Para cada imagen relevante, en vez de un',
+      '<img> con una URL de relleno, deja un comentario HTML inmediatamente antes con',
+      'una descripcion detallada, lista para pegar en un generador de imagenes',
+      '(estilo, iluminacion, composicion, paleta, formato), coherente con la Seed y la',
+      'direccion visual. Ejemplo de formato:',
+      '<!-- IMAGEN: [descripcion detallada para Midjourney/DALL-E] -->',
+      'El <img> en si puede usar un marcador de posicion neutro; lo que importa es la',
+      'descripcion que queda documentada.',
+    ].join('\n'),
+  },
+  {
+    id: 'video-generation',
+    label: 'Generacion de video',
+    summary: 'Describe un concepto de video (p.ej. fondo del hero) como prompt, no lo genera.',
+    defaultEnabled: false,
+    instruction: [
+      'Si el hero o alguna seccion se beneficia de un fondo animado, no lo generes:',
+      'deja un comentario HTML con la descripcion del video (encuadre, movimiento de',
+      'camara, duracion aproximada, estilo, sin texto ni personas salvo que se pida),',
+      'lista para pegar en un generador de video (Runway, Luma...). Formato:',
+      '<!-- VIDEO: [descripcion detallada para el generador] -->',
+      'La version que se ve en el navegador debe funcionar igual de bien sin el video',
+      '(imagen o color de fondo equivalente), porque el video no se genera de verdad.',
+    ].join('\n'),
+  },
   {
     id: 'subtractive-design',
     label: 'Diseno sustractivo',
@@ -26,7 +112,25 @@ export const DESIGN_TECHNIQUES: DesignTechnique[] = [
     ].join('\n'),
   },
   {
-    id: 'human-copywriting',
+    id: 'negative-constraints-plus',
+    label: 'Restricciones negativas reforzadas',
+    summary: 'Severidad extra sobre las restricciones ya acordadas: nada de "huella de IA".',
+    defaultEnabled: true,
+    instruction: [
+      'Ademas de las restricciones negativas ya listadas para este proyecto, evita',
+      'especificamente los "tics" que delatan contenido generado por IA:',
+      '- palabras como "delve", "comprehensive", "unlock", "revolucionario", "ecosistema";',
+      '- imagenes con piel perfecta, mirando a camara o con iluminacion de estudio',
+      'excesivamente limpia;',
+      '- fondos de oficina genericos y sonrisas irreales;',
+      '- cualquier afirmacion que no se pueda verificar con lo que hay en la propia pagina.',
+      '',
+      'Estas restricciones son requisitos duros, igual que las del proyecto: incumplir',
+      'una invalida la entrega.',
+    ].join('\n'),
+  },
+  {
+    id: 'human-writing',
     label: 'Redaccion humana',
     summary: 'Copy concreto, sin cliches corporativos ni lenguaje de IA.',
     defaultEnabled: true,
@@ -43,77 +147,6 @@ export const DESIGN_TECHNIQUES: DesignTechnique[] = [
       'Prohibido: "revoluciona", "desbloquea el poder de", "lleva tu X al siguiente nivel",',
       '"solucion definitiva", "sin esfuerzo", "transforma tu negocio", "potencia tu equipo",',
       'y cualquier superlativo que no se pueda demostrar en la propia pagina.',
-    ].join('\n'),
-  },
-  {
-    id: 'visual-hierarchy',
-    label: 'Jerarquia visual explicita',
-    summary: 'Una sola idea dominante por pantalla.',
-    defaultEnabled: true,
-    instruction: [
-      'Construye la jerarquia con tamano, peso y espacio antes que con color o cajas.',
-      'En cada pantalla debe haber un unico elemento dominante; todo lo demas es subordinado.',
-      'Usa una escala tipografica modular declarada en los tokens y no la rompas.',
-      'El salto entre niveles debe ser evidente: si dos niveles se parecen, hay uno de mas.',
-    ].join('\n'),
-  },
-  {
-    id: 'progressive-disclosure',
-    label: 'Revelacion progresiva',
-    summary: 'Primero lo imprescindible; el detalle, bajo demanda.',
-    defaultEnabled: false,
-    instruction: [
-      'Muestra primero lo que el usuario necesita para decidir si sigue leyendo.',
-      'El detalle tecnico, las condiciones y las excepciones van en secciones posteriores',
-      'o en elementos desplegables accesibles (con aria-expanded y control por teclado).',
-      'Ningun contenido esencial puede quedar oculto tras una interaccion.',
-    ].join('\n'),
-  },
-  {
-    id: 'social-proof-discipline',
-    label: 'Prueba social honesta',
-    summary: 'Evidencia verificable en lugar de logos genericos.',
-    defaultEnabled: false,
-    instruction: [
-      'Si incluyes prueba social, debe ser concreta y verificable: cifra, contexto y fuente.',
-      'No inventes nombres de empresas reales, logotipos ni testimonios atribuidos a personas.',
-      'Si no hay datos reales, usa un marcador explicito del tipo',
-      '"[pendiente: 3 casos de clientes con metrica]" en lugar de rellenar con ficcion.',
-    ].join('\n'),
-  },
-  {
-    id: 'seed-anchoring',
-    label: 'Anclaje de Seed String',
-    summary: 'Traduce la Seed a decisiones de composicion, no a decoracion.',
-    defaultEnabled: true,
-    instruction: [
-      'La Seed String no es un adorno tematico: es la direccion creativa.',
-      'Debe cambiar decisiones concretas de composicion, retícula, escala tipografica,',
-      'paleta, densidad de informacion, tratamiento de imagen y estilo de los componentes.',
-      'Si la pagina resultante podria haberse generado con cualquier otra Seed,',
-      'no has aplicado la Seed.',
-    ].join('\n'),
-  },
-  {
-    id: 'micro-copy',
-    label: 'Micro-copy funcional',
-    summary: 'Textos de apoyo que eliminan dudas justo antes de actuar.',
-    defaultEnabled: false,
-    instruction: [
-      'Cada campo, boton y estado vacio lleva un texto de apoyo que responde',
-      'a la duda inmediata del usuario: que pasa despues, cuanto cuesta, que datos se guardan.',
-      'Los mensajes de error explican que ha fallado y como arreglarlo, nunca solo "error".',
-    ].join('\n'),
-  },
-  {
-    id: 'performance-budget',
-    label: 'Presupuesto de rendimiento',
-    summary: 'Pagina ligera, sin dependencias innecesarias.',
-    defaultEnabled: false,
-    instruction: [
-      'Presupuesto: documento por debajo de 150 KB, cero librerias externas,',
-      'cero fuentes remotas (usa pilas de fuentes del sistema), cero imagenes en base64 pesadas.',
-      'Las animaciones se limitan a transform y opacity.',
     ].join('\n'),
   },
 ];

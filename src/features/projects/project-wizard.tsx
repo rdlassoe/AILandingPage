@@ -8,7 +8,7 @@ import { Alert, Button, Field, Input, Panel, PanelBody, PanelHeader, Select, Tex
 import { TagInput } from '@/components/ui/tag-input';
 import { DEFAULT_NEGATIVE_CONSTRAINTS, LANDING_CATEGORIES, SECTION_SUGGESTIONS } from '@/lib/data/catalog';
 import { cn } from '@/lib/utils';
-import type { LandingType, SeedString, Technology, Tone } from '@/types/domain';
+import type { LandingType, Technology, Tone } from '@/types/domain';
 
 /**
  * Asistente de creacion de proyecto.
@@ -46,7 +46,7 @@ const STEPS = [
   { id: 1, title: '¿Que quieres crear?', hint: 'Lo basico del encargo' },
   { id: 2, title: '¿Para quien?', hint: 'Publico, objetivo y tono' },
   { id: 3, title: '¿Que tecnologia?', hint: 'Stack y restricciones tecnicas' },
-  { id: 4, title: '¿Que estilo buscas?', hint: 'Direccion visual y Seed String' },
+  { id: 4, title: '¿Que estilo buscas?', hint: 'Direccion visual' },
   { id: 5, title: '¿Que quieres evitar?', hint: 'Restricciones negativas y secciones' },
 ];
 
@@ -71,8 +71,6 @@ interface FormState {
   sophistication: number;
   references: string[];
   avoid: string[];
-  seedStringId: string;
-  customSeed: string;
   sections: string[];
   features: string[];
   benefits: string[];
@@ -100,21 +98,13 @@ const INITIAL: FormState = {
   sophistication: 3,
   references: [],
   avoid: [],
-  seedStringId: '',
-  customSeed: '',
   sections: [],
   features: [],
   benefits: [],
   negativeConstraints: DEFAULT_NEGATIVE_CONSTRAINTS,
 };
 
-export function ProjectWizard({
-  technologies,
-  seeds,
-}: {
-  technologies: Technology[];
-  seeds: SeedString[];
-}) {
+export function ProjectWizard({ technologies }: { technologies: Technology[] }) {
   const router = useRouter();
   const [step, setStep] = useState(1);
   const [form, setForm] = useState<FormState>(INITIAL);
@@ -124,11 +114,6 @@ export function ProjectWizard({
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) => {
     setForm((previous) => ({ ...previous, [key]: value }));
   };
-
-  const selectedSeed = useMemo(
-    () => seeds.find((seed) => seed.id === form.seedStringId) ?? null,
-    [seeds, form.seedStringId],
-  );
 
   const stepErrors = useMemo(() => validateStep(step, form), [step, form]);
   const canContinue = stepErrors.length === 0;
@@ -196,8 +181,6 @@ export function ProjectWizard({
             keyMessage: form.keyMessage,
             tone: form.tone,
           },
-          seedStringId: form.seedStringId || null,
-          seedStringValue: form.customSeed || selectedSeed?.value || null,
           negativeConstraints: form.negativeConstraints,
         }),
       });
@@ -266,7 +249,7 @@ export function ProjectWizard({
             {step === 1 ? <StepOne form={form} set={set} /> : null}
             {step === 2 ? <StepTwo form={form} set={set} /> : null}
             {step === 3 ? <StepThree form={form} set={set} technologies={technologies} /> : null}
-            {step === 4 ? <StepFour form={form} set={set} seeds={seeds} selectedSeed={selectedSeed} /> : null}
+            {step === 4 ? <StepFour form={form} set={set} /> : null}
             {step === 5 ? <StepFive form={form} set={set} /> : null}
           </PanelBody>
         </Panel>
@@ -521,20 +504,14 @@ function StepThree({
   );
 }
 
-function StepFour({
-  form,
-  set,
-  seeds,
-  selectedSeed,
-}: {
-  form: FormState;
-  set: Setter;
-  seeds: SeedString[];
-  selectedSeed: SeedString | null;
-}) {
+function StepFour({ form, set }: { form: FormState; set: Setter }) {
   return (
     <>
-      <Field label="Estilo visual" htmlFor="style" hint="Describelo con tus palabras; la Seed String hara el resto.">
+      <Field
+        label="Estilo visual"
+        htmlFor="style"
+        hint="Describelo con tus palabras. La direccion creativa (Seed String) se genera sola en cada ejecucion."
+      >
         <Input
           id="style"
           value={form.style}
@@ -578,43 +555,6 @@ function StepFour({
           value={form.sophistication}
           onChange={(event) => set('sophistication', Number(event.target.value))}
           className="w-full accent-[var(--accent)]"
-        />
-      </Field>
-
-      <Field
-        label="Seed String"
-        htmlFor="seed"
-        hint="Ancla la direccion creativa para que no todas las paginas se parezcan."
-      >
-        <Select id="seed" value={form.seedStringId} onChange={(event) => set('seedStringId', event.target.value)}>
-          <option value="">Sin Seed String</option>
-          {seeds.map((seed) => (
-            <option key={seed.id} value={seed.id}>
-              {seed.name}
-            </option>
-          ))}
-        </Select>
-      </Field>
-
-      {selectedSeed ? (
-        <div className="border border-line bg-panel-2 px-3 py-2.5 text-xs">
-          <p className="font-mono text-[0.6875rem] uppercase tracking-wider text-faint">Cadena</p>
-          <p className="mt-1 text-ink">{selectedSeed.value}</p>
-          <p className="mt-2 text-muted">{selectedSeed.description}</p>
-        </div>
-      ) : null}
-
-      <Field
-        label="O escribe tu propia Seed String"
-        htmlFor="customSeed"
-        hint="Si la rellenas, sustituye a la seleccionada arriba."
-      >
-        <Textarea
-          id="customSeed"
-          rows={2}
-          value={form.customSeed}
-          onChange={(event) => set('customSeed', event.target.value)}
-          placeholder="editorial tecnologico + diseno suizo + fotografia documental + minimalismo funcional"
         />
       </Field>
 

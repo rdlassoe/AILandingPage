@@ -3,8 +3,8 @@
 --
 -- Regla general: un usuario solo ve y modifica sus propias filas.
 -- Excepciones deliberadas:
---   - technologies / seed_strings con owner_id NULL: catalogo comun, lectura
---     para cualquier usuario autenticado, escritura prohibida.
+--   - technologies con owner_id NULL: catalogo comun, lectura para cualquier
+--     usuario autenticado, escritura prohibida.
 --   - landing_pages con status 'public' o 'featured': lectura publica.
 --   - prompt_templates, llm_providers, llm_models, landing_categories:
 --     catalogo de solo lectura.
@@ -14,7 +14,6 @@
 
 alter table profiles             enable row level security;
 alter table technologies         enable row level security;
-alter table seed_strings         enable row level security;
 alter table prompt_templates     enable row level security;
 alter table landing_categories   enable row level security;
 alter table projects             enable row level security;
@@ -66,30 +65,6 @@ create policy "technologies_update_own" on technologies
 
 drop policy if exists "technologies_delete_own" on technologies;
 create policy "technologies_delete_own" on technologies
-  for delete to authenticated
-  using (owner_id = auth.uid());
-
--- ---------------------------------------------------------------------------
--- seed_strings
--- ---------------------------------------------------------------------------
-
-drop policy if exists "seeds_select" on seed_strings;
-create policy "seeds_select" on seed_strings
-  for select to authenticated
-  using (owner_id is null or owner_id = auth.uid());
-
-drop policy if exists "seeds_insert_own" on seed_strings;
-create policy "seeds_insert_own" on seed_strings
-  for insert to authenticated
-  with check (owner_id = auth.uid() and is_preset = false);
-
-drop policy if exists "seeds_update_own" on seed_strings;
-create policy "seeds_update_own" on seed_strings
-  for update to authenticated
-  using (owner_id = auth.uid()) with check (owner_id = auth.uid());
-
-drop policy if exists "seeds_delete_own" on seed_strings;
-create policy "seeds_delete_own" on seed_strings
   for delete to authenticated
   using (owner_id = auth.uid());
 

@@ -160,9 +160,7 @@ export function buildDefineSpec(project: Project): DefineSpec {
       sophistication >= 4
         ? 'Mercado saturado: entra por el mecanismo concreto y por la prueba, no por la promesa.'
         : 'Mercado poco saturado: explica primero el problema y el resultado, luego el mecanismo.',
-    styleDirection: project.seedStringValue
-      ? `Direccion creativa anclada en: ${project.seedStringValue}`
-      : project.visual.style,
+    styleDirection: project.visual.style,
     accessibilityCriteria: [
       'Contraste minimo 4.5:1 en texto de cuerpo.',
       'Navegacion completa por teclado con foco visible.',
@@ -192,7 +190,6 @@ function buildBrief(project: Project): string {
     `Tono: ${project.content.tone}`,
     project.content.features.length > 0 ? `Caracteristicas: ${project.content.features.join(', ')}` : '',
     project.content.benefits.length > 0 ? `Beneficios: ${project.content.benefits.join(', ')}` : '',
-    project.seedStringValue ? `Seed String: ${project.seedStringValue}` : '',
   ]
     .filter((line) => line.length > 0)
     .join('\n');

@@ -2,23 +2,47 @@
 
 ## Qué produce
 
-Un prompt estructurado en **17 secciones canónicas**, ensambladas de forma determinista a
-partir del proyecto, el stack, la Seed String, las técnicas de diseño activas y las
-restricciones negativas.
+Un prompt estructurado en **17 secciones canónicas**, a partir del proyecto, el stack, la
+Seed String, las técnicas de diseño activas y las restricciones negativas.
 
-`buildLandingPrompt` es una función pura: el mismo proyecto produce siempre el mismo texto.
-Eso es lo que permite versionarlo, cachear por hash y distinguir los cambios del usuario de
-los del sistema.
+`buildLandingPrompt` sigue siendo una función pura y determinista — mismo proyecto, mismo
+texto — pero con un proveedor real ya no es el paso final: es el **borrador**. Dos llamadas
+más al LLM lo reescriben antes de guardarlo como versión definitiva (ver
+[`docs/ARCHITECTURE.md`](ARCHITECTURE.md#9-el-prompt-lo-escribe-un-llm-no-solo-el-código)):
+una genera el string aleatorio de la Seed (técnica *String Seed of Thought*, sin traducirlo
+a nada todavía), la otra reescribe el prompt entero — copia el stack y las restricciones tal
+cual, pero **manipula el string de la Seed** para derivar de ahí la dirección creativa, en
+vez de recibirla ya decidida. El **modo demo** (o un proveedor real sin configurar) se queda
+en el borrador determinista, sin gastar esas dos llamadas.
 
 ```
 USER INPUT
     ↓
-PROJECT CONTEXT ──► DISCOVER ──► SEED STRING ──► TECHNOLOGY CONTEXT
-    ↓                                                   ↓
-DESIGN TECHNIQUES ──► NEGATIVE CONSTRAINTS ──► PROMPT COMPOSER
+PROJECT CONTEXT ──► DISCOVER ──► TECHNOLOGY CONTEXT (composer.ts, elegido por el usuario)
+    ↓
+SSoT SEED ENGINE (LLM real, o PRNG en modo demo) ──► SEED STRING
+    ↓
+DESIGN TECHNIQUES ──► NEGATIVE CONSTRAINTS ──► BORRADOR determinista (buildLandingPrompt)
+                                                        ↓
+                                    Proveedor real: LLM PROMPT COMPOSER reescribe el borrador
                                                         ↓
                                                   FINAL PROMPT
 ```
+
+### Cómo se dispara desde la interfaz
+
+`buildPromptForProject` (todo el diagrama de arriba) no se ejecuta como efecto colateral de
+generar: el Prompt Studio lo expone como un paso propio. El botón **"Generar prompt"** llama
+a `POST /api/prompts/compose`, que compone y persiste la `prompt_version` sin generar ningún
+HTML todavía — con un proveedor real, esta es la llamada que de verdad gasta las dos peticiones
+LLM (Seed + composición). Solo entonces se habilita **"Generar HTML"**, que reutiliza esa misma
+`prompt_version` sin recomponerla. Detalle y motivo en
+[`ARCHITECTURE.md`](ARCHITECTURE.md#10-componer-el-prompt-es-un-paso-explícito-no-un-efecto-colateral-de-generar).
+
+Esto es distinto de `POST /api/prompts/generate`, que sigue existiendo como la vista previa
+gratuita y determinista de siempre (nunca invoca un LLM, ver más abajo): el Prompt Studio ya
+no la llama automáticamente al cargar la página ni al cambiar de técnicas, precisamente para
+no mostrar una aproximación que se pueda confundir con el prompt real.
 
 ---
 
@@ -68,59 +92,63 @@ Resultado: seleccionar `HTML + CSS + JS` produce un prompt distinto que
 
 ---
 
-## Seed String Engine (SSoT)
+## Seed String Engine
 
-Una Seed String ancla el contexto semántico para evitar que todas las páginas converjan
-hacia la misma estructura visual.
+> **Cambió de fondo respecto a versiones anteriores de este documento.** Ya no existe ningún
+> catálogo de Seeds ni una traducción a directrices con un esquema fijo (`SeedDirectives`).
+> La Seed **es únicamente un string aleatorio**, generado de nuevo en cada ejecución. Detalle
+> completo de la migración en [`SEED_ENGINE_MIGRATION.md`](SEED_ENGINE_MIGRATION.md).
 
-No es texto decorativo: cada Seed se traduce a **siete directrices concretas** que viajan al
-prompt.
+La sección `SEED STRING` del prompt existe para anclar el contexto semántico y evitar que
+todas las páginas converjan hacia la misma estructura visual — pero ya no lo hace con una
+cadena curada a mano. Implementa la técnica *String Seed of Thought* (Misaki & Akiba, ICLR
+2026, ver el PDF en `docs/`) tal cual: alguien genera un string aleatorio, y **otro paso
+distinto lo manipula** (suma de códigos + módulo, hash…) para derivar de ahí una dirección
+creativa — nunca se elige la dirección directamente.
 
-```ts
-interface SeedDirectives {
-  composition: string;   // retícula, alineaciones, tensión
-  typography: string;    // familias, escala, interlineado
-  color: string;         // paleta y uso del acento
-  hierarchy: string;     // cómo se construyen los niveles
-  spacing: string;       // ritmo vertical y densidad
-  imagery: string;       // qué tipo de imagen y para qué
-  components: string;    // radios, bordes, sombras, botones
-}
-```
+`src/services/prompt-engine/seed-engine.ts` solo hace la primera mitad:
 
-El catálogo incluye 11 Seeds (Swiss Editorial, Bauhaus Funcional, Laboratorio Industrial,
-Tecnología Documental, Lujo Editorial, Arquitectura Mínima, Retro Computing, Brutalismo Web,
-Tecnología Orgánica, Revista Contemporánea, Retícula Experimental) y el usuario puede crear
-las suyas.
+- **`generateRandomSeedString`, con un proveedor real.** Una llamada mínima al LLM (receta del
+  Listing A.5 del paper: "genera un string aleatorio complejo", sin pedirle nada más todavía).
+- **`generateRandomSeedForMock`, en modo demo o sin proveedor configurado.** Lo mismo sin LLM:
+  `crypto.randomBytes(24).toString('hex')`. Aleatoriedad real, no simulada.
 
-Si se escribe una Seed a mano, `inferDirectives` deduce la categoría por palabras clave y
-reutiliza las directrices de esa familia.
+La segunda mitad — manipular el string para derivar la dirección — la hace quien redacta el
+resto del prompt, no este motor:
 
-### Generación diversa
+- **Con un proveedor real**, el propio `composePromptViaLLM` (ver más abajo) recibe el string
+  dentro de la sección `SEED STRING` del borrador y la instrucción de manipularlo; escribe la
+  dirección resultante ahí mismo, aplicándola también al resto de su redacción.
+- **En modo demo**, `brief-parser.ts` extrae el string de la sección y lo hashea (suma de
+  códigos + módulo) para elegir una de las 13 familias de estilo internas del Mock Provider
+  (`SeedCategory` en `src/types/domain.ts`) — el mismo principio, hecho en código en vez de
+  con razonamiento.
 
-Para las variantes con estrategia *«mismo contenido, nueva Seed String»* o *«experimental»*,
-`generateSeedString()` compone una cadena interna combinando cinco ejes semánticos
-(movimiento, materia, disciplina, tensión, luz).
-
-> Es una **estrategia de diversificación creativa**, no un generador criptográficamente
-> seguro. La cadena interna no se muestra al usuario salvo que la pida.
+`renderSeedBlock(randomString)` es todo lo que queda de la función que antes traducía la Seed:
+ahora solo compone el bloque `- String aleatorio: ...` más la instrucción de la técnica, sin
+ningún dato precalculado.
 
 ---
 
 ## Técnicas de diseño
 
-Se activan y desactivan desde el Prompt Studio; cada una inyecta un bloque de instrucciones.
+Las 8 de *"Tratado Práctico: 8 Técnicas Avanzadas de Diseño de Landing Pages con IA"* (PDF en
+`docs/`), seleccionables y combinables desde el Prompt Studio.
 
 | Técnica | Por defecto | Qué añade |
 | --- | --- | --- |
+| Cadenas Semilla (SSoT) | Sí | Obliga a que la Seed derivada por la técnica cambie decisiones concretas, no adornos. |
+| Prompts Ambiciosos | No | Psicología del usuario, sesgos cognitivos, fricción a eliminar por sección — no solo estética. |
+| Bucles con subagentes | No | El modelo se auto-audita bajo criterios de UX/persuasión antes de entregar su respuesta final. |
+| Generación de imágenes | No | Describe cada imagen como prompt para Midjourney/DALL-E (comentario HTML), no la genera de verdad. |
+| Generación de vídeo | No | Igual, para un posible vídeo de fondo — la app no integra ningún generador de vídeo. |
 | Diseño sustractivo | Sí | Auditoría de cada elemento y techos duros: máx. 6 secciones, 4 tarjetas, 1 CTA primario, 3 campos por formulario. |
+| Restricciones negativas reforzadas | Sí | Severidad extra sobre la sección `NEGATIVE_CONSTRAINTS` ya existente: nada de "huella de IA". |
 | Redacción humana | Sí | Frases concretas, cifras, micro-copy; prohíbe los clichés de IA por nombre. |
-| Jerarquía visual explícita | Sí | Una idea dominante por pantalla; jerarquía por tamaño y espacio. |
-| Anclaje de Seed String | Sí | Obliga a que la Seed cambie decisiones concretas, no adornos. |
-| Revelación progresiva | No | Lo imprescindible primero; el detalle bajo demanda y accesible. |
-| Prueba social honesta | No | Evidencia verificable; prohíbe inventar empresas y testimonios. |
-| Micro-copy funcional | No | Texto de apoyo junto a cada acción y mensajes de error útiles. |
-| Presupuesto de rendimiento | No | < 150 KB, sin librerías ni fuentes remotas. |
+
+Las dos técnicas de imagen/vídeo son deliberadamente **prompt-instrucciones, no generación
+real**: la app no integra ningún modelo de imagen ni de vídeo, y fingir que sí sería simular
+una integración — algo que el proyecto prohíbe explícitamente en todo lo demás.
 
 ---
 
@@ -237,8 +265,14 @@ La misma condensación se aplica a la generación de variantes.
 ## El bucle completo
 
 ```
-GENERATE ──► REVIEW ──► CRITIQUE ──► (usuario acepta) ──► REFINE ──► GENERATE
+COMPOSE ──► GENERATE ──► REVIEW ──► CRITIQUE ──► (usuario acepta) ──► REFINE ──► GENERATE
 ```
+
+`COMPOSE` (botón "Generar prompt") y `GENERATE` (botón "Generar HTML") son dos peticiones
+separadas la primera vez — ver ["Cómo se dispara desde la interfaz"](#cómo-se-dispara-desde-la-interfaz)
+más arriba. `REFINE` y la generación de variantes vuelven a fundir ambos pasos en una sola
+llamada, porque parten de una `prompt_version` que ya existe (la de la Landing Page actual) y
+no hay nada nuevo que revisar antes de generar.
 
 Cada vuelta crea una `prompt_version` y una `landing_version`. El historial permite
 comparar y volver atrás.

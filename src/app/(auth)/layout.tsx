@@ -25,7 +25,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
           <ol className="mt-8 space-y-3 text-sm text-muted">
             {[
               'Defines el proyecto: publico, objetivo, estilo y restricciones.',
-              'El Prompt Engine compone un prompt de 17 secciones con tu stack y tu Seed String.',
+              'El Prompt Engine compone un prompt de 17 secciones con tu stack y una Seed String generada al azar.',
               'El modelo genera; el validador comprueba; el critico audita.',
               'Refinas, versionas y guardas en tu biblioteca para reutilizarlo.',
             ].map((step, index) => (

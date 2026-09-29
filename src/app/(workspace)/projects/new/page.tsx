@@ -10,10 +10,7 @@ export const dynamic = 'force-dynamic';
 export default async function NewProjectPage() {
   const { user, store } = await requireContext();
 
-  const [technologies, seeds] = await Promise.all([
-    store.listTechnologies(user.id),
-    store.listSeeds(user.id),
-  ]);
+  const technologies = await store.listTechnologies(user.id);
 
   return (
     <>
@@ -23,7 +20,7 @@ export default async function NewProjectPage() {
         description="Cinco preguntas. Solo las dos primeras son obligatorias; el resto tiene valores por defecto que podras cambiar despues."
       />
       <PageBody>
-        <ProjectWizard technologies={technologies} seeds={seeds} />
+        <ProjectWizard technologies={technologies} />
       </PageBody>
     </>
   );

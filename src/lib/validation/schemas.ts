@@ -81,8 +81,6 @@ export const createProjectSchema = z.object({
   visual: projectVisualSchema,
   technical: projectTechnicalSchema,
   content: projectContentSchema,
-  seedStringId: z.string().trim().max(80).nullable().default(null),
-  seedStringValue: trimmed(600).nullable().default(null),
   negativeConstraints: stringList(30),
 });
 
@@ -101,6 +99,7 @@ export const generateLandingSchema = z.object({
   promptContent: z.string().max(200_000).optional(),
   systemInstruction: z.string().max(20_000).optional(),
   promptId: z.string().trim().min(1).optional(),
+  promptVersionId: z.string().trim().min(1).optional(),
   providerId: providerIdSchema.optional(),
   model: z.string().trim().max(120).optional(),
   config: generationConfigSchema.optional(),
@@ -110,10 +109,16 @@ export const generateLandingSchema = z.object({
 
 export const buildPromptSchema = z.object({
   projectId: z.string().trim().min(1),
-  customSeedValue: z.string().trim().max(600).nullable().optional(),
   technologyIds: z.array(z.string().trim().min(1)).max(12).optional(),
   negativeConstraints: stringList(30).optional(),
   designTechniques: z.array(z.string().trim().min(1)).max(20).optional(),
+});
+
+export const composePromptSchema = z.object({
+  projectId: z.string().trim().min(1),
+  promptId: z.string().trim().min(1).optional(),
+  providerId: providerIdSchema.optional(),
+  model: z.string().trim().max(120).optional(),
 });
 
 export const critiqueSchema = z.object({
@@ -175,38 +180,6 @@ export const createTechnologySchema = z.object({
   selfContainedPreview: z.boolean().default(true),
   isActive: z.boolean().default(true),
   sortOrder: z.number().int().min(0).max(1000).default(500),
-});
-
-export const seedDirectivesSchema = z.object({
-  composition: trimmed(400).default(''),
-  typography: trimmed(400).default(''),
-  color: trimmed(400).default(''),
-  hierarchy: trimmed(400).default(''),
-  spacing: trimmed(400).default(''),
-  imagery: trimmed(400).default(''),
-  components: trimmed(400).default(''),
-});
-
-export const createSeedSchema = z.object({
-  name: trimmed(80).min(2),
-  category: z.enum([
-    'editorial',
-    'bauhaus',
-    'swiss',
-    'brutalist',
-    'industrial',
-    'magazine',
-    'retro-tech',
-    'documentary',
-    'architecture',
-    'art',
-    'luxury',
-    'natural',
-    'experimental',
-  ]),
-  value: trimmed(600).min(5, 'La Seed String necesita algo mas de contenido.'),
-  description: trimmed(400).default(''),
-  directives: seedDirectivesSchema,
 });
 
 export const updateProfileSchema = z.object({

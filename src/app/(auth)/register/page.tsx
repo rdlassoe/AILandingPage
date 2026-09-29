@@ -19,7 +19,7 @@ export default async function RegisterPage() {
         <p className="eyebrow mb-1.5">Registro</p>
         <h1 className="text-2xl font-semibold tracking-tight">Crea tu cuenta</h1>
         <p className="mt-1.5 text-sm text-muted">
-          Empezaras con el catalogo de tecnologias y Seed Strings ya cargado.
+          Empezaras con el catalogo de tecnologias ya cargado.
         </p>
       </div>
 

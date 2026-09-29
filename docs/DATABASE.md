@@ -26,11 +26,11 @@ Aplicando el esquema
 
 Estado de la base de datos
 
-OK    15 tablas presentes
-OK    8 tipos enumerados presentes
+OK    14 tablas presentes
+OK    7 tipos enumerados presentes
 OK    Row Level Security activo en todas las tablas
-OK    26 politicas RLS definidas
-OK    Catalogo cargado: 11 tecnologias, 11 seeds, 9 plantillas, 17 modelos
+OK    22 politicas RLS definidas
+OK    Catalogo cargado: 11 tecnologias, 9 plantillas, 17 modelos
 
 La base esta lista.
 ```
@@ -53,8 +53,12 @@ Dónde está la cadena: **Project Settings → Database → Connection string**.
 `SUPABASE_DB_URL` la usa **solo** este script. La aplicación nunca la lee: en ejecución
 habla con Supabase por la API con la clave `anon` y RLS.
 
-El script no borra nada: aplica los tres archivos en orden, cada uno en una transacción, de
-modo que si uno falla se revierte entero y te dice en qué línea.
+El script normalmente no borra nada: aplica los tres archivos en orden, cada uno en una
+transacción, de modo que si uno falla se revierte entero y te dice en qué línea. Una
+migración puntual puede incluir un `DROP` explícito para retirar esquema muerto (así se hizo
+al eliminar el catálogo de Seed Strings, ver
+[`SEED_ENGINE_MIGRATION.md`](SEED_ENGINE_MIGRATION.md)); esos casos se documentan en el
+propio `schema.sql` con un comentario que avisa de que son destructivos.
 
 ### Opción B — manual
 
@@ -64,17 +68,17 @@ En el **SQL Editor** de tu proyecto, en este orden:
 | --- | --- | --- |
 | 1 | `supabase/schema.sql` | Tipos enumerados, tablas, índices y triggers. |
 | 2 | `supabase/policies.sql` | Row Level Security y políticas. |
-| 3 | `supabase/seed.sql` | Catálogo: 11 tecnologías, 11 Seed Strings, 9 plantillas, 17 modelos. |
+| 3 | `supabase/seed.sql` | Catálogo: 11 tecnologías, 9 plantillas, 17 modelos. |
 
 ### Qué queda creado
 
 | | |
 | --- | --- |
-| Tablas | 15 |
-| Tipos enumerados | 8 |
-| Índices | 44 |
-| Triggers | 11 |
-| Políticas RLS | 26 |
+| Tablas | 14 |
+| Tipos enumerados | 7 |
+| Índices | 41 |
+| Triggers | 10 |
+| Políticas RLS | 22 |
 
 Los tres archivos son **idempotentes**: repetirlos actualiza el catálogo y deja los datos
 intactos, sin duplicar filas. No requieren ninguna extensión: `gen_random_uuid()` forma
@@ -118,8 +122,8 @@ projects           prompts       landing_pages    generations   generation_revie
     ├──► project_technologies            ├──► landing_versions         │
     │         │                          └─────────────────────────────┘
     │         ▼
-    └──► technologies        seed_strings        prompt_templates
-         (catálogo + propias) (catálogo + propias)  (catálogo)
+    └──► technologies        prompt_templates
+         (catálogo + propias)  (catálogo)
 ```
 
 ### Cadena de trazabilidad
@@ -137,11 +141,16 @@ que se resolvieron.
 
 ## Tablas
 
+> **La tabla `seed_strings`, el tipo `seed_category` y las columnas
+> `projects.seed_string_id` / `projects.seed_string_value` ya no existen.** La Seed pasó a
+> ser un string aleatorio generado en cada ejecución, sin catálogo (ver
+> [`SEED_ENGINE_MIGRATION.md`](SEED_ENGINE_MIGRATION.md)). `supabase/schema.sql` incluye el
+> `DROP` que los retiró de cualquier base que los tuviera de una versión anterior.
+
 | Tabla | Para qué | Notas |
 | --- | --- | --- |
 | `profiles` | Usuario y preferencias de generación. | Se crea sola con un trigger sobre `auth.users`. |
 | `technologies` | Catálogo de stacks con sus instrucciones de prompt. | `owner_id IS NULL` = catálogo común, de solo lectura. |
-| `seed_strings` | Direcciones creativas y sus directrices. | Igual criterio de propiedad. |
 | `prompt_templates` | Plantillas internas del Prompt Engine. | Solo lectura desde la aplicación. |
 | `landing_categories` | Catálogo de apoyo para filtros. | |
 | `projects` | Brief completo. | Bloques de valor en `jsonb`. |
@@ -156,7 +165,7 @@ que se resolvieron.
 
 ### Tipos enumerados
 
-`provider_id`, `technology_category`, `seed_category`, `project_status`, `landing_status`,
+`provider_id`, `technology_category`, `project_status`, `landing_status`,
 `generation_status`, `generation_kind`, `prompt_template_kind`.
 
 ### Índices relevantes
@@ -179,7 +188,7 @@ Excepciones deliberadas:
 
 | Caso | Política |
 | --- | --- |
-| `technologies` / `seed_strings` con `owner_id IS NULL` | Lectura para cualquier usuario autenticado; sin escritura. El catálogo solo se toca con la *service role*. |
+| `technologies` con `owner_id IS NULL` | Lectura para cualquier usuario autenticado; sin escritura. El catálogo solo se toca con la *service role*. |
 | `landing_pages` con `status in ('public','featured')` | Lectura pública. |
 | `landing_versions` | Siempre privadas, aunque la página sea pública: se comparte la versión vigente, no el historial. |
 | `prompt_templates`, `llm_providers`, `llm_models`, `landing_categories` | Solo lectura. |
@@ -213,7 +222,7 @@ Cubre en particular lo que no se ve hasta producción:
 | Contrato de columnas | Los mappers están escritos a mano; una errata en un nombre solo se nota al guardar. |
 | Ida y vuelta de `jsonb` | Confirma que ningún valor se pierde. PostgreSQL **reordena las claves**, así que comparar con `JSON.stringify` da falsos negativos. |
 | Historial privado de páginas públicas | Se comparte la versión vigente, no el historial. |
-| Catálogo de solo lectura | Un usuario no puede alterar `technologies` ni `seed_strings` comunes. |
+| Catálogo de solo lectura | Un usuario no puede alterar `technologies` comunes. |
 
 También puedes comprobarlo a mano con dos cuentas; la segunda no debe ver los proyectos de
 la primera:

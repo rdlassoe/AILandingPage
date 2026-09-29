@@ -1,140 +1,113 @@
-import { detectSeedCategory } from '@/lib/llm/mock/brief-parser';
-import { PRESET_SEEDS } from '@/lib/data/catalog';
-import type { SeedDirectives, SeedString } from '@/types/domain';
-import type { SeedResolution } from '@/types/services';
+import 'server-only';
+
+import { randomBytes, randomUUID } from 'node:crypto';
+
+import { runLLM } from '@/services/llm-orchestrator';
+import type { ProviderId } from '@/types/llm';
+import type { RandomSeedResult } from '@/types/services';
 
 /**
- * Seed String Engine (SSoT)
+ * Seed Engine — String Seed of Thought (SSoT)
  *
- * Una Seed String ancla el contexto semantico de la generacion para evitar
- * que todas las Landing Pages converjan hacia la misma estructura visual.
- *
- * Se trata como una estrategia de diversificacion creativa, NO como una
- * fuente de aleatoriedad criptografica: las cadenas generadas aqui solo
- * sirven para separar el espacio de salidas del modelo.
+ * Implementa la tecnica de Misaki & Akiba (ICLR 2026, ver PDF en `docs/`): la
+ * "Seed" de una Landing Page es UNICAMENTE un string aleatorio, generado de
+ * nuevo en cada ejecucion. No hay catalogo que elegir ni traduccion previa a
+ * directrices de diseno — este motor solo produce el string; quien lo recibe
+ * (el Prompt Composer via LLM, o el hash deterministico del Mock Provider en
+ * `brief-parser.ts`) es quien lo MANIPULA para derivar una direccion
+ * creativa, exactamente como describe el paper.
  */
 
-const VOCABULARY = {
-  movimiento: [
-    'diseno suizo',
-    'Bauhaus funcional',
-    'brutalismo web',
-    'modernismo escandinavo',
-    'constructivismo',
-    'minimalismo japones',
-    'postmodernismo editorial',
-  ],
-  materia: [
-    'hormigon visto',
-    'papel prensa',
-    'acero cepillado',
-    'madera sin tratar',
-    'vidrio industrial',
-    'tinta sobre algodon',
-    'plastico tecnico',
-  ],
-  disciplina: [
-    'cartografia',
-    'instrumentacion de laboratorio',
-    'senaletica aeroportuaria',
-    'fotografia documental',
-    'diagramas de ingenieria',
-    'encuadernacion editorial',
-    'arquitectura de interiores',
-  ],
-  tension: [
-    'orden frente a accidente',
-    'densidad frente a vacio',
-    'rigor frente a gesto',
-    'serie frente a pieza unica',
-    'norma frente a excepcion',
-  ],
-  luz: [
-    'luz rasante de tarde',
-    'luz difusa de norte',
-    'iluminacion cenital de taller',
-    'contraluz suave',
-    'luz artificial fria',
-  ],
-} as const;
-
-type VocabularyKey = keyof typeof VOCABULARY;
-
-const AXES: VocabularyKey[] = ['movimiento', 'materia', 'disciplina', 'tension', 'luz'];
+interface SSoTContext {
+  ownerId: string;
+  providerId?: ProviderId;
+  model?: string;
+}
 
 /**
- * Genera una Seed String interna para diversificar variantes.
- * No se muestra al usuario salvo que pida verla explicitamente.
+ * Instruccion minima del paper (ver Listing A.5, "Sequential Random String
+ * Generation"): pedir solo el string, sin pedirle al modelo que lo derive en
+ * nada todavia. La derivacion ocurre despues, en `composePromptViaLLM`, que
+ * ya tiene el contexto completo del proyecto para hacerla con sentido.
  */
-export function generateSeedString(entropy: number = Math.random()): string {
-  let cursor = Math.abs(Math.floor(entropy * 1_000_003));
-  const parts: string[] = [];
+const RANDOM_STRING_SYSTEM = [
+  'Eres un generador de datos aleatorios. Cuando se te pida un string',
+  'aleatorio, primero genera uno unico y complejo, sin patron obvio ni',
+  'estructura reconocible.',
+  '',
+  'Usa tu criterio para que parezca arbitrario e impredecible: mezcla',
+  'mayusculas, minusculas, numeros y simbolos.',
+  '',
+  'Responde UNICAMENTE con el string, dentro de las etiquetas',
+  '<random_string></random_string>. Nada de explicaciones antes o despues.',
+].join('\n');
 
-  for (const axis of AXES) {
-    const options = VOCABULARY[axis];
-    cursor = (cursor * 1103515245 + 12345) >>> 0;
-    const index = cursor % options.length;
-    parts.push(options[index] as string);
-  }
-
-  return parts.join(' + ');
+function extractTag(text: string, tag: string): string | null {
+  const match = new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`, 'i').exec(text);
+  return match?.[1]?.trim() || null;
 }
 
-const NEUTRAL_DIRECTIVES: SeedDirectives = {
-  composition: 'Retícula clara y consistente; ningun elemento fuera de alineacion sin motivo.',
-  typography: 'Una escala tipografica modular con dos familias como maximo.',
-  color: 'Un color de acento y dos neutros; el acento se reserva para la accion principal.',
-  hierarchy: 'Un unico elemento dominante por pantalla.',
-  spacing: 'Ritmo vertical constante basado en un modulo fijo.',
-  imagery: 'Imagenes con proposito informativo, nunca de relleno.',
-  components: 'Componentes coherentes entre si: un solo radio, un solo grosor de borde.',
-};
+/**
+ * Genera el string aleatorio de la Seed con un LLM real. Si el modelo no
+ * respeta el formato, se usa su respuesta completa igualmente: cualquier
+ * texto sirve como fuente de entropia, la etiqueta es solo para aislarlo con
+ * limpieza cuando el modelo coopera.
+ */
+export async function generateRandomSeedString(
+  ctx: SSoTContext,
+): Promise<{ result: RandomSeedResult; latencyMs: number; inputTokens: number | null; outputTokens: number | null; providerId: ProviderId; model: string; cacheKey: string }> {
+  const outcome = await runLLM({
+    ownerId: ctx.ownerId,
+    system: RANDOM_STRING_SYSTEM,
+    prompt: [
+      'Genera un string aleatorio complejo.',
+      // El id de peticion no aporta nada al negocio: solo evita que una cache
+      // por hash de (proveedor+modelo+prompt) devuelva la MISMA
+      // "aleatoriedad" en dos ejecuciones distintas del mismo proyecto.
+      `Id de peticion (uselo solo como parte de su string, no lo repita literal): ${randomUUID()}`,
+    ].join('\n'),
+    providerId: ctx.providerId,
+    model: ctx.model,
+    responseFormat: 'text',
+  });
 
-/** Deriva directrices concretas para una Seed escrita a mano. */
-export function inferDirectives(value: string): SeedDirectives {
-  const category = detectSeedCategory(value);
-  const preset = PRESET_SEEDS.find((seed) => seed.category === category);
-  return preset?.directives ?? NEUTRAL_DIRECTIVES;
+  const randomString = extractTag(outcome.text, 'random_string') || outcome.text.trim();
+
+  return {
+    result: { randomString, isMock: outcome.isMock },
+    latencyMs: outcome.latencyMs,
+    inputTokens: outcome.inputTokens,
+    outputTokens: outcome.outputTokens,
+    providerId: outcome.providerId,
+    model: outcome.model,
+    cacheKey: outcome.cacheKey,
+  };
 }
 
-/** Resuelve que Seed usar: la escrita a mano, la seleccionada o ninguna. */
-export function resolveSeed(seed: SeedString | null, customValue?: string | null): SeedResolution {
-  const custom = (customValue ?? '').trim();
-  if (custom.length > 0) {
-    return { value: custom, directives: inferDirectives(custom), source: 'custom' };
-  }
-  if (seed) {
-    return { value: seed.value, directives: seed.directives, source: 'preset' };
-  }
-  return { value: '', directives: NEUTRAL_DIRECTIVES, source: 'none' };
+/**
+ * Equivalente del modo demo: sin LLM, pero con aleatoriedad real (no
+ * simulada) via `crypto.randomBytes`.
+ */
+export function generateRandomSeedForMock(): RandomSeedResult {
+  return { randomString: randomBytes(24).toString('hex'), isMock: true };
 }
 
-/** Crea una resolucion a partir de una Seed generada internamente. */
-export function generatedSeedResolution(): SeedResolution {
-  const value = generateSeedString();
-  return { value, directives: inferDirectives(value), source: 'generated' };
-}
-
-/** Bloque de prompt que traduce la Seed a decisiones de diseno. */
-export function renderSeedBlock(resolution: SeedResolution): string {
-  if (resolution.source === 'none') {
-    return [
-      '- Seed: sin direccion creativa explicita.',
-      'Aplica un sistema visual coherente y evita la estetica generica de plantilla SaaS.',
-    ].join('\n');
-  }
-
-  const d = resolution.directives;
+/**
+ * Bloque de prompt para la seccion SEED STRING. A diferencia de las
+ * versiones anteriores de este motor, NO incluye directrices ya traducidas:
+ * solo el string y la instruccion de manipularlo. Quien redacte el resto del
+ * prompt (el Prompt Composer) es quien debe aplicar la tecnica.
+ */
+export function renderSeedBlock(randomString: string): string {
   return [
-    `- Seed: ${resolution.value}`,
+    `- String aleatorio: ${randomString}`,
     '',
-    'Traduce esa direccion a decisiones concretas:',
-    `- Composicion: ${d.composition}`,
-    `- Tipografia: ${d.typography}`,
-    `- Color: ${d.color}`,
-    `- Jerarquia: ${d.hierarchy}`,
-    `- Espaciado: ${d.spacing}`,
-    `- Imagen: ${d.imagery}`,
-    `- Componentes: ${d.components}`,
+    'Aplica la tecnica String Seed of Thought: manipula este string (por',
+    'ejemplo sumando los codigos de sus caracteres y aplicando un modulo, o',
+    'con un hash) para derivar de ese calculo una direccion creativa unica —',
+    'no la elijas directamente, debe salir de procesar el string. Traduce esa',
+    'direccion a decisiones concretas de composicion, retícula, escala',
+    'tipografica, paleta, densidad de informacion, tratamiento de imagen y',
+    'estilo de los componentes.',
   ].join('\n');
 }

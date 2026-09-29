@@ -96,8 +96,6 @@ const run = async () => {
       keyMessage: 'Tu documento, cosido a mano y hecho para durar',
       tone: 'sobrio',
     },
-    seedStringId: 'seed-documentary-tech',
-    seedStringValue: null,
     negativeConstraints: [
       'Sin degradados morados ni azul-a-violeta.',
       'Sin fotografia de stock corporativa.',
@@ -120,7 +118,10 @@ const run = async () => {
   const prompt = await call('POST', '/api/prompts/generate', { projectId });
   const built = prompt.data;
   log(prompt.status === 200 && built?.sections?.length === 17, 'POST /api/prompts/generate', `secciones=${built?.sections?.length}`);
-  log(built?.seedStringValue?.includes('documental') === true, 'Seed String incorporada al prompt');
+  log(
+    typeof built?.seedStringValue === 'string' && built.seedStringValue.length > 0 && built?.content?.includes('## SEED STRING') === true,
+    'Seed String aleatoria incorporada al prompt',
+  );
   log(built?.content?.includes('## NEGATIVE CONSTRAINTS') === true, 'Seccion NEGATIVE CONSTRAINTS presente');
   log(built?.content?.includes('## SUBTRACTIVE DESIGN') === true, 'Seccion SUBTRACTIVE DESIGN presente');
   log(built?.content?.includes('Lucide') === true, 'Instrucciones de la tecnologia Lucide compuestas');

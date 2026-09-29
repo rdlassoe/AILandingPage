@@ -31,11 +31,10 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   const project = await store.getProject(user.id, id);
   if (!project) notFound();
 
-  const [technologies, landings, prompts, seed] = await Promise.all([
+  const [technologies, landings, prompts] = await Promise.all([
     store.getTechnologiesByIds(project.technical.technologyIds),
     store.listLandingPages(user.id, { projectId: project.id }),
     store.listPrompts(user.id, { projectId: project.id }),
-    project.seedStringId ? store.getSeed(project.seedStringId) : Promise.resolve(null),
   ]);
 
   const provider = getProvider(env.llm.defaultProvider);
@@ -130,8 +129,12 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
             </Panel>
 
             <Panel>
-              <PanelHeader eyebrow="Direccion visual" title="Estilo y Seed String" />
-              <PanelBody className="space-y-3">
+              <PanelHeader
+                eyebrow="Direccion visual"
+                title="Estilo"
+                description="La Seed String se genera de nuevo en cada ejecucion (tecnica SSoT): se ve en la ficha de la Landing Page una vez generada, no aqui."
+              />
+              <PanelBody>
                 <DefinitionList
                   items={[
                     { term: 'Estilo', value: project.visual.style || '—' },
@@ -159,13 +162,6 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
                     },
                   ]}
                 />
-
-                {project.seedStringValue ? (
-                  <div className="border border-line bg-panel-2 px-3 py-2.5">
-                    <p className="eyebrow">Seed String{seed ? ` · ${seed.name}` : ''}</p>
-                    <p className="mt-1 text-sm text-ink">{project.seedStringValue}</p>
-                  </div>
-                ) : null}
               </PanelBody>
             </Panel>
 

@@ -2,25 +2,25 @@
 
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Copy, Eye, FileCode2, Play, RefreshCw, Save, Shuffle, Wand2 } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Copy, Eye, FileCode2, Play, Save, Shuffle, Wand2 } from 'lucide-react';
 
 import { CriticPanel } from './critic-panel';
+import { useActiveProvider } from '@/components/layout/active-provider-context';
 import { LandingPreview } from '@/components/preview/landing-preview';
-import { Alert, Badge, Button, Field, Panel, PanelBody, PanelHeader, Select, Textarea } from '@/components/ui';
+import { Alert, Badge, Button, Field, Panel, PanelBody, PanelHeader, Select } from '@/components/ui';
 import { apiPatch, apiPost } from '@/lib/api-client';
 import type { ProviderSummary } from '@/lib/llm/registry';
 import { cn, estimateTokens, formatDuration } from '@/lib/utils';
 import { VARIATION_STRATEGIES } from '@/types/domain';
+import type { GenerationReview, LandingPage, Project, PromptSection, VariationStrategy } from '@/types/domain';
 import type {
-  GenerationReview,
-  LandingPage,
-  Project,
-  PromptSection,
-  SeedString,
-  VariationStrategy,
-} from '@/types/domain';
-import type { BuiltPrompt, DesignTechnique, DesignTechniqueId, GenerateLandingResult } from '@/types/services';
+  BuiltPrompt,
+  ComposePromptResult,
+  DesignTechnique,
+  DesignTechniqueId,
+  GenerateLandingResult,
+} from '@/types/services';
 import type { ProviderId } from '@/types/llm';
 
 /**
@@ -34,15 +34,13 @@ import type { ProviderId } from '@/types/llm';
  * previsualizar -> auditar -> refinar -> versionar -> guardar.
  */
 
-type Busy = null | 'building' | 'generating' | 'critiquing' | 'refining' | 'varying' | 'saving';
+type Busy = null | 'composing' | 'generating' | 'critiquing' | 'refining' | 'varying' | 'saving';
 
 interface StudioProps {
   projects: Project[];
-  seeds: SeedString[];
   providers: ProviderSummary[];
   techniques: DesignTechnique[];
   defaultTechniqueIds: DesignTechniqueId[];
-  defaultProvider: ProviderId;
 }
 
 interface LastRun {
@@ -56,26 +54,27 @@ interface LastRun {
 
 export function PromptStudio({
   projects,
-  seeds,
   providers,
   techniques,
   defaultTechniqueIds,
-  defaultProvider,
 }: StudioProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const requestedProject = searchParams.get('project');
 
   const [projectId, setProjectId] = useState<string>(requestedProject ?? projects[0]?.id ?? '');
-  const [providerId, setProviderId] = useState<ProviderId>(defaultProvider);
+  // El proveedor activo es global (barra lateral + Prompt Studio): elegirlo
+  // aqui se refleja de inmediato en el indicador de la barra lateral.
+  const { activeProviderId: providerId, setActiveProviderId: setProviderId } = useActiveProvider();
   const [model, setModel] = useState<string>('');
   const [techniqueIds, setTechniqueIds] = useState<DesignTechniqueId[]>(defaultTechniqueIds);
-  const [customSeed, setCustomSeed] = useState('');
 
   const [built, setBuilt] = useState<BuiltPrompt | null>(null);
   const [promptText, setPromptText] = useState('');
   const [edited, setEdited] = useState(false);
   const [view, setView] = useState<'prompt' | 'sections' | 'code'>('prompt');
+  /** Id de la `prompt_version` ya compuesta y persistida (botón "Generar prompt"). */
+  const [composedVersionId, setComposedVersionId] = useState<string | null>(null);
 
   const [landing, setLanding] = useState<LandingPage | null>(null);
   const [review, setReview] = useState<GenerationReview | null>(null);
@@ -89,93 +88,95 @@ export function PromptStudio({
   const [notice, setNotice] = useState<string | null>(null);
   const [lastRun, setLastRun] = useState<LastRun | null>(null);
 
-  const buildAbort = useRef<AbortController | null>(null);
-
   const project = useMemo(() => projects.find((item) => item.id === projectId) ?? null, [projects, projectId]);
   const provider = useMemo(
     () => providers.find((item) => item.id === providerId) ?? providers[0],
     [providers, providerId],
   );
 
-  /* --------------------------------------------------- composicion del prompt */
-
-  const buildPrompt = useCallback(
-    async (options: { keepEdits?: boolean } = {}) => {
-      if (!projectId) return;
-
-      buildAbort.current?.abort();
-      const controller = new AbortController();
-      buildAbort.current = controller;
-
-      setBusy('building');
-      setError(null);
-
-      const result = await apiPost<BuiltPrompt>(
-        '/api/prompts/generate',
-        {
-          projectId,
-          customSeedValue: customSeed.trim() || null,
-          designTechniques: techniqueIds,
-        },
-        controller.signal,
-      );
-
-      if (controller.signal.aborted) return;
-
-      if (!result.ok) {
-        setError(result.error.message);
-        setBusy(null);
-        return;
-      }
-
-      setBuilt(result.data);
-      if (!options.keepEdits) {
-        setPromptText(result.data.content);
-        setEdited(false);
-      }
-      setBusy(null);
-    },
-    [projectId, customSeed, techniqueIds],
-  );
+  /**
+   * Limpia el prompt actual: no hay borrador ni aproximacion, solo lo que
+   * produjo de verdad la ultima llamada a "Generar prompt". Se usa al cambiar
+   * de proyecto o de tecnicas, momentos en los que ese resultado deja de
+   * corresponder al estado actual.
+   */
+  const clearPrompt = () => {
+    setBuilt(null);
+    setPromptText('');
+    setEdited(false);
+    setComposedVersionId(null);
+  };
 
   useEffect(() => {
-    void buildPrompt();
+    clearPrompt();
     // Al cambiar de proyecto se descarta el resultado anterior.
     setLanding(null);
     setReview(null);
     setAccepted([]);
     setLastRun(null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
 
-  // Recomponer al cambiar tecnicas o Seed. Con debounce: la Seed se escribe a
-  // mano y no tiene sentido lanzar una peticion por pulsacion. El efecto de
-  // montaje se ignora porque el anterior ya compone el prompt inicial.
+  // Cambiar las tecnicas activas invalida el prompt ya generado (si lo
+  // habia): hay que volver a pulsar "Generar prompt" para que las refleje.
+  // El efecto de montaje se ignora porque no hay nada que invalidar todavia.
   const firstRender = useRef(true);
   useEffect(() => {
     if (firstRender.current) {
       firstRender.current = false;
       return;
     }
-    if (!projectId) return;
-
-    const timer = setTimeout(() => void buildPrompt({ keepEdits: edited }), 400);
-    return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [techniqueIds, customSeed]);
+    clearPrompt();
+  }, [techniqueIds]);
 
   /* ------------------------------------------------------------- acciones */
 
-  const generate = async () => {
+  /**
+   * Unica forma de obtener el prompt: lo compone `buildPromptForProject`
+   * (con LLM real si hay proveedor configurado; determinista solo en modo
+   * demo) y lo persiste, sin generar todavia el HTML. No hay ningun borrador
+   * previo ni aproximacion: esto puede gastar cuota de un proveedor real, y
+   * es el paso explicito para revisar el prompt exacto antes de decidir si
+   * generar.
+   */
+  const composeFinalPrompt = async () => {
     if (!project) return;
+    setBusy('composing');
+    setError(null);
+    setNotice(null);
+
+    const result = await apiPost<ComposePromptResult>('/api/prompts/compose', {
+      projectId: project.id,
+      providerId,
+      model: model || undefined,
+    });
+
+    if (!result.ok) {
+      setError(result.error.message + (result.error.hint ? ` ${result.error.hint}` : ''));
+      setBusy(null);
+      return;
+    }
+
+    setBuilt(result.data.built);
+    setPromptText(result.data.built.content);
+    setEdited(false);
+    setComposedVersionId(result.data.promptVersionId);
+    setBusy(null);
+  };
+
+  const generate = async () => {
+    if (!project || !composedVersionId) return;
     setBusy('generating');
     setError(null);
     setNotice(null);
 
     const result = await apiPost<GenerateLandingResult>('/api/generations', {
       projectId: project.id,
-      promptContent: promptText,
-      systemInstruction: built?.systemInstruction,
+      // Genera a partir del prompt ya generado por "Generar prompt": el
+      // servidor no vuelve a recomponerlo. Si el usuario edito el textarea
+      // despues, se respeta su texto tal cual.
+      promptVersionId: composedVersionId,
+      promptContent: edited ? promptText : undefined,
+      systemInstruction: edited ? built?.systemInstruction : undefined,
       providerId,
       model: model || undefined,
       label: edited ? 'Generacion con prompt editado' : 'Generacion desde el Prompt Engine',
@@ -338,7 +339,7 @@ export function PromptStudio({
             <Wand2 className="size-6 text-faint" aria-hidden="true" />
             <p className="font-medium text-ink">Necesitas un proyecto para componer un prompt</p>
             <p className="max-w-md text-sm text-muted">
-              El Prompt Engine parte del brief: publico, objetivo, stack, Seed String y restricciones.
+              El Prompt Engine parte del brief: publico, objetivo, stack y restricciones. La Seed String se genera sola.
             </p>
             <Link
               href="/projects/new"
@@ -400,13 +401,20 @@ export function PromptStudio({
           </Field>
 
           <div className="flex items-end gap-2">
-            <Button variant="primary" onClick={generate} loading={generating} className="flex-1">
-              <Play className="size-4" aria-hidden="true" />
-              Generar
+            <Button variant="secondary" onClick={() => void composeFinalPrompt()} loading={busy === 'composing'}>
+              <Wand2 className="size-4" aria-hidden="true" />
+              Generar prompt
             </Button>
-            <Button onClick={() => void buildPrompt()} loading={busy === 'building'} title="Reconstruir el prompt">
-              <RefreshCw className="size-4" aria-hidden="true" />
-              <span className="sr-only">Reconstruir prompt</span>
+            <Button
+              variant="primary"
+              onClick={generate}
+              loading={generating}
+              disabled={!composedVersionId}
+              title={!composedVersionId ? 'Genera el prompt primero' : undefined}
+              className="flex-1"
+            >
+              <Play className="size-4" aria-hidden="true" />
+              Generar HTML
             </Button>
           </div>
         </PanelBody>
@@ -432,14 +440,17 @@ export function PromptStudio({
             eyebrow="Prompt"
             title={
               <span className="flex items-center gap-2">
-                Prompt final
+                Prompt
+                {composedVersionId && !edited ? <Badge tone="ok">generado</Badge> : null}
                 {edited ? <Badge tone="warn">editado</Badge> : null}
               </span>
             }
             description={
               built
                 ? `${built.sections.length} secciones · ~${estimateTokens(promptText).toLocaleString('es-ES')} tokens`
-                : 'Componiendo...'
+                : busy === 'composing'
+                  ? 'Generando...'
+                  : 'Pulsa "Generar prompt" para verlo aqui.'
             }
             actions={
               <div className="flex items-center gap-1" role="group" aria-label="Vista del panel izquierdo">
@@ -465,7 +476,7 @@ export function PromptStudio({
             {view === 'prompt' ? (
               <div className="p-3">
                 <label htmlFor="prompt-editor" className="sr-only">
-                  Prompt final enviado al modelo
+                  Prompt enviado al modelo
                 </label>
                 <textarea
                   id="prompt-editor"
@@ -503,8 +514,16 @@ export function PromptStudio({
               <Copy className="size-3.5" aria-hidden="true" />
               Copiar prompt
             </Button>
-            {edited ? (
-              <Button size="sm" variant="ghost" onClick={() => void buildPrompt()}>
+            {edited && built ? (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  // Vuelve al prompt ya generado, sin gastar otra llamada.
+                  setPromptText(built.content);
+                  setEdited(false);
+                }}
+              >
                 Descartar ediciones
               </Button>
             ) : null}
@@ -623,37 +642,6 @@ export function PromptStudio({
         </Panel>
 
         <div className="grid gap-4">
-          <Panel>
-            <PanelHeader
-              eyebrow="Direccion creativa"
-              title="Seed String de esta ejecucion"
-              description="Sustituye temporalmente a la del proyecto sin modificarlo."
-            />
-            <PanelBody className="space-y-3">
-              <Field label="Seed personalizada" htmlFor="studio-seed">
-                <Textarea
-                  id="studio-seed"
-                  rows={2}
-                  value={customSeed}
-                  onChange={(event) => setCustomSeed(event.target.value)}
-                  placeholder={project?.seedStringValue ?? 'diseno suizo + laboratorio industrial + fotografia documental'}
-                />
-              </Field>
-
-              <div className="flex flex-wrap gap-1.5">
-                {seeds.slice(0, 6).map((seed) => (
-                  <button
-                    key={seed.id}
-                    type="button"
-                    onClick={() => setCustomSeed(seed.value)}
-                    className="border border-dashed border-line-strong px-1.5 py-0.5 text-xs text-muted hover:border-accent hover:text-accent"
-                  >
-                    {seed.name}
-                  </button>
-                ))}
-              </div>
-            </PanelBody>
-          </Panel>
 
           {landing ? (
             <Panel>

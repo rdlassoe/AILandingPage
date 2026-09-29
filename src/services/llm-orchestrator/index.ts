@@ -41,7 +41,7 @@ export function computeCacheKey(input: {
 
 export async function runLLM(request: OrchestratorRequest): Promise<OrchestratorOutcome> {
   const { provider, fellBackToMock, requested } = resolveProvider(request.providerId);
-  const model = pickModel(provider.models.map((m) => m.id), request.model, provider.defaultModel);
+  const model = pickModel(request.model, provider.defaultModel);
   const config = { ...DEFAULT_GENERATION_CONFIG, ...request.config };
 
   const cacheKey = computeCacheKey({
@@ -117,9 +117,24 @@ function normalize(
   };
 }
 
-function pickModel(available: string[], requested: string | undefined, fallback: string): string {
-  if (requested && available.includes(requested)) return requested;
-  return fallback;
+/**
+ * Antes esto exigia que `requested` apareciera en el catalogo ESTATICO del
+ * proveedor (`provider.models`), y si no coincidia exactamente caia al
+ * modelo por defecto EN SILENCIO. Para Gemini/Groq el catalogo es completo
+ * asi que casi nunca se notaba, pero para Ollama el catalogo real depende de
+ * lo que cada maquina tenga descargado (`listAvailableModels()`, no
+ * `provider.models`): pedir un modelo instalado que no estuviera en la lista
+ * de referencia (p.ej. "llama3.1:8b" en vez de "llama3.1") terminaba
+ * ejecutando el modelo por defecto sin ningun aviso.
+ *
+ * Cada adaptador ya hace `request.model ?? this.defaultModel` por su cuenta,
+ * y un modelo desconocido para el proveedor es la API quien lo valida (ver
+ * `maxOutputFor`) — asi que aqui basta con lo mismo: confiar en el modelo
+ * pedido si viene, sin comprobarlo contra ningun catalogo.
+ */
+function pickModel(requested: string | undefined, fallback: string): string {
+  const trimmed = requested?.trim();
+  return trimmed ? trimmed : fallback;
 }
 
 /**

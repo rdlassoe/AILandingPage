@@ -3,7 +3,7 @@ import 'server-only';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 
-import { PRESET_SEEDS, PRESET_TECHNOLOGIES } from './catalog';
+import { PRESET_TECHNOLOGIES } from './catalog';
 import { PRESET_PROMPT_TEMPLATES } from './prompt-templates';
 import type {
   DashboardStats,
@@ -20,13 +20,11 @@ import type {
   NewProject,
   NewPrompt,
   NewPromptVersion,
-  NewSeedString,
   NewTechnology,
   ProjectFilter,
   ProjectPatch,
   PromptFilter,
   PromptPatch,
-  SeedStringPatch,
   TechnologyPatch,
 } from './types';
 import { forbidden, notFound } from '@/lib/errors';
@@ -41,7 +39,6 @@ import type {
   Prompt,
   PromptTemplate,
   PromptVersion,
-  SeedString,
   Technology,
 } from '@/types/domain';
 
@@ -71,7 +68,6 @@ interface LocalDb {
   version: number;
   profiles: Profile[];
   technologies: Technology[];
-  seeds: SeedString[];
   promptTemplates: PromptTemplate[];
   projects: Project[];
   prompts: Prompt[];
@@ -91,7 +87,6 @@ function emptyDb(): LocalDb {
     version: 1,
     profiles: [],
     technologies: PRESET_TECHNOLOGIES.map((tech) => ({ ...tech, createdAt: ts, updatedAt: ts })),
-    seeds: PRESET_SEEDS.map((seed) => ({ ...seed, createdAt: ts, updatedAt: ts })),
     promptTemplates: PRESET_PROMPT_TEMPLATES.map((tpl) => ({ ...tpl, createdAt: ts, updatedAt: ts })),
     projects: [],
     prompts: [],
@@ -119,7 +114,6 @@ async function loadDb(): Promise<LocalDb> {
           // El catalogo de presets siempre se refresca desde el codigo,
           // conservando lo que el usuario haya creado.
           technologies: mergePresets(base.technologies, parsed.technologies ?? []),
-          seeds: mergePresets(base.seeds, parsed.seeds ?? []),
           promptTemplates: base.promptTemplates,
         } satisfies LocalDb;
       } catch {
@@ -256,57 +250,6 @@ export class LocalDataStore implements DataStore {
     if (tech.ownerId === null) throw forbidden();
     assertOwner(userId, tech.ownerId);
     db.technologies = db.technologies.filter((t) => t.id !== id);
-    await persist(db);
-  }
-
-  /* ----------------------------------------------------------------- Seeds */
-
-  async listSeeds(userId: string | null): Promise<SeedString[]> {
-    const db = await loadDb();
-    return db.seeds
-      .filter((seed) => seed.ownerId === null || seed.ownerId === userId)
-      .sort((a, b) => Number(b.isPreset) - Number(a.isPreset) || a.name.localeCompare(b.name));
-  }
-
-  async getSeed(id: string): Promise<SeedString | null> {
-    const db = await loadDb();
-    return db.seeds.find((s) => s.id === id) ?? null;
-  }
-
-  async createSeed(userId: string, input: NewSeedString): Promise<SeedString> {
-    const db = await loadDb();
-    const ts = nowIso();
-    const seed: SeedString = {
-      ...input,
-      id: newId(),
-      isPreset: false,
-      ownerId: userId,
-      createdAt: ts,
-      updatedAt: ts,
-    };
-    db.seeds.push(seed);
-    await persist(db);
-    return seed;
-  }
-
-  async updateSeed(userId: string, id: string, patch: SeedStringPatch): Promise<SeedString> {
-    const db = await loadDb();
-    const seed = db.seeds.find((s) => s.id === id);
-    if (!seed) throw notFound('esa Seed String');
-    if (seed.ownerId === null) throw forbidden();
-    assertOwner(userId, seed.ownerId);
-    Object.assign(seed, patch, { updatedAt: nowIso() });
-    await persist(db);
-    return seed;
-  }
-
-  async deleteSeed(userId: string, id: string): Promise<void> {
-    const db = await loadDb();
-    const seed = db.seeds.find((s) => s.id === id);
-    if (!seed) throw notFound('esa Seed String');
-    if (seed.ownerId === null) throw forbidden();
-    assertOwner(userId, seed.ownerId);
-    db.seeds = db.seeds.filter((s) => s.id !== id);
     await persist(db);
   }
 
@@ -685,12 +628,11 @@ export class LocalDataStore implements DataStore {
   }
 
   async search(userId: string, query: string): Promise<GlobalSearchResults> {
-    const [projects, prompts, landingPages, technologies, seeds] = await Promise.all([
+    const [projects, prompts, landingPages, technologies] = await Promise.all([
       this.listProjects(userId, { search: query, limit: 5 }),
       this.listPrompts(userId, { search: query, limit: 5 }),
       this.listLandingPages(userId, { search: query, limit: 5 }),
       this.listTechnologies(userId),
-      this.listSeeds(userId),
     ]);
 
     return {
@@ -698,7 +640,6 @@ export class LocalDataStore implements DataStore {
       prompts,
       landingPages,
       technologies: technologies.filter((t) => matches([t.name, t.description, t.slug], query)).slice(0, 5),
-      seeds: seeds.filter((s) => matches([s.name, s.value, s.description], query)).slice(0, 5),
     };
   }
 }

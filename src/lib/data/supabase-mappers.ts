@@ -10,7 +10,6 @@ import type {
   Prompt,
   PromptTemplate,
   PromptVersion,
-  SeedString,
   Technology,
 } from '@/types/domain';
 
@@ -78,38 +77,6 @@ export const fromTechnology = (tech: Partial<Technology>): Row => prune({
   owner_id: tech.ownerId,
 });
 
-export const toSeed = (row: Row): SeedString => ({
-  id: str(row.id),
-  name: str(row.name),
-  category: str(row.category, 'editorial') as SeedString['category'],
-  value: str(row.value),
-  description: str(row.description),
-  directives: json(row.directives, {
-    composition: '',
-    typography: '',
-    color: '',
-    hierarchy: '',
-    spacing: '',
-    imagery: '',
-    components: '',
-  }),
-  isPreset: bool(row.is_preset),
-  ownerId: nullableStr(row.owner_id),
-  createdAt: str(row.created_at),
-  updatedAt: str(row.updated_at),
-});
-
-export const fromSeed = (seed: Partial<SeedString>): Row => prune({
-  id: seed.id,
-  name: seed.name,
-  category: seed.category,
-  value: seed.value,
-  description: seed.description,
-  directives: seed.directives,
-  is_preset: seed.isPreset,
-  owner_id: seed.ownerId,
-});
-
 export const toPromptTemplate = (row: Row): PromptTemplate => ({
   id: str(row.id),
   key: str(row.key),
@@ -131,8 +98,6 @@ export const toProject = (row: Row): Project => ({
   visual: json(row.visual, {} as Project['visual']),
   technical: json(row.technical, {} as Project['technical']),
   content: json(row.content, {} as Project['content']),
-  seedStringId: nullableStr(row.seed_string_id),
-  seedStringValue: nullableStr(row.seed_string_value),
   negativeConstraints: arr(row.negative_constraints),
   discover: (row.discover as Project['discover']) ?? null,
   define: (row.define as Project['define']) ?? null,
@@ -148,8 +113,6 @@ export const fromProject = (project: Partial<Project>): Row => prune({
   visual: project.visual,
   technical: project.technical,
   content: project.content,
-  seed_string_id: project.seedStringId,
-  seed_string_value: project.seedStringValue,
   negative_constraints: project.negativeConstraints,
   discover: project.discover,
   define: project.define,

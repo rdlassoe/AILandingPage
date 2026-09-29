@@ -141,7 +141,7 @@ try {
       group by table_name order by table_name`,
   );
   const granted = new Map(grants.map((r) => [r.table_name, r.privs]));
-  const needed = ['projects', 'prompts', 'prompt_versions', 'landing_pages', 'landing_versions', 'generations', 'generation_reviews', 'profiles', 'technologies', 'seed_strings', 'project_technologies'];
+  const needed = ['projects', 'prompts', 'prompt_versions', 'landing_pages', 'landing_versions', 'generations', 'generation_reviews', 'profiles', 'technologies', 'project_technologies'];
   const missing = needed.filter((t) => !(granted.get(t) ?? '').includes('SELECT'));
   check(
     missing.length === 0,
@@ -174,7 +174,6 @@ try {
   const mapperSource = readFileSync(join(root, 'src/lib/data/supabase-mappers.ts'), 'utf8');
   const mapperTables = {
     fromTechnology: 'technologies',
-    fromSeed: 'seed_strings',
     fromProject: 'projects',
     fromPrompt: 'prompts',
     fromPromptVersion: 'prompt_versions',
@@ -225,10 +224,9 @@ try {
 
   const [project] = await asUser(
     userA,
-    `insert into projects (owner_id, status, basics, visual, technical, content,
-                           seed_string_id, seed_string_value, negative_constraints)
-     values ($1,'draft',$2,$3,$4,$5,$6,$7,$8) returning *`,
-    [userA, basics, visual, technical, content, 'seed-swiss-editorial', 'diseno suizo + retícula', ['sin degradados']],
+    `insert into projects (owner_id, status, basics, visual, technical, content, negative_constraints)
+     values ($1,'draft',$2,$3,$4,$5,$6) returning *`,
+    [userA, basics, visual, technical, content, ['sin degradados']],
   );
 
   check(!!project?.id, 'INSERT de proyecto como usuario autenticado');
@@ -248,8 +246,6 @@ try {
     Array.isArray(project.negative_constraints) && project.negative_constraints[0] === 'sin degradados',
     'Las restricciones negativas vuelven como text[]',
   );
-  check(project.seed_string_id === 'seed-swiss-editorial', 'La FK a seed_strings acepta un id del catalogo');
-
   // Indice relacional del stack
   await asUser(
     userA,
@@ -376,9 +372,6 @@ try {
      values ('x','x','x','library','x', null)`,
   );
   check(catalogInsert !== null, 'No se pueden anadir tecnologias al catalogo comun', catalogInsert ? `rechazado (${catalogInsert})` : 'SE PERMITIO');
-
-  const bSeeds = await asUser(userB, `select id from seed_strings where is_preset`);
-  check(bSeeds.length >= 11, 'Las Seed Strings del catalogo son legibles', `${bSeeds.length} filas`);
 
   const bTemplates = await asUser(userB, `select key from prompt_templates`);
   check(bTemplates.length >= 9, 'Las plantillas de prompt son legibles', `${bTemplates.length} filas`);

@@ -26,8 +26,6 @@ export async function PATCH(request: Request, { params }: RouteParams) {
     if (input.visual) patch.visual = input.visual;
     if (input.technical) patch.technical = input.technical;
     if (input.content) patch.content = input.content;
-    if (input.seedStringId !== undefined) patch.seedStringId = input.seedStringId;
-    if (input.seedStringValue !== undefined) patch.seedStringValue = input.seedStringValue;
     if (input.negativeConstraints) patch.negativeConstraints = input.negativeConstraints;
     if (input.status) patch.status = input.status;
 

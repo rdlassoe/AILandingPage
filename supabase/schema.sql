@@ -4,7 +4,7 @@
 -- Ejecutar en el SQL Editor de Supabase, en este orden:
 --   1. schema.sql    (este archivo: tipos, tablas, indices, triggers)
 --   2. policies.sql  (Row Level Security)
---   3. seed.sql      (catalogo inicial de tecnologias, seeds y plantillas)
+--   3. seed.sql      (catalogo inicial de tecnologias y plantillas)
 --
 -- Convenciones:
 --   - snake_case en SQL, camelCase en el dominio (traduce supabase-mappers.ts)
@@ -34,12 +34,6 @@ do $$ begin
 exception when duplicate_object then null; end $$;
 
 do $$ begin
-  create type seed_category as enum
-    ('editorial', 'bauhaus', 'swiss', 'brutalist', 'industrial', 'magazine',
-     'retro-tech', 'documentary', 'architecture', 'art', 'luxury', 'natural', 'experimental');
-exception when duplicate_object then null; end $$;
-
-do $$ begin
   create type project_status as enum ('draft', 'defined', 'generated', 'archived');
 exception when duplicate_object then null; end $$;
 
@@ -53,14 +47,35 @@ do $$ begin
 exception when duplicate_object then null; end $$;
 
 do $$ begin
-  create type generation_kind as enum ('landing', 'refinement', 'variation', 'critique', 'discover');
+  create type generation_kind as enum
+    ('landing', 'refinement', 'variation', 'critique', 'discover', 'seed', 'prompt_generation');
 exception when duplicate_object then null; end $$;
+
+-- Bases creadas antes de que el prompt y la Seed se compusieran con un LLM
+-- (paso SSoT + Prompt Composer) solo tienen los 5 valores originales.
+alter type generation_kind add value if not exists 'seed';
+alter type generation_kind add value if not exists 'prompt_generation';
 
 do $$ begin
   create type prompt_template_kind as enum
     ('landing-generator', 'technology', 'technology-combination', 'ux-critic', 'cro-critic',
      'accessibility-critic', 'code-reviewer', 'refinement', 'variation', 'discover');
 exception when duplicate_object then null; end $$;
+
+-- ---------------------------------------------------------------------------
+-- Migracion: la Seed dejo de ser un catalogo semantico curado y paso a ser un
+-- string aleatorio generado en cada ejecucion (ver docs/SEED_ENGINE_MIGRATION.md).
+-- Bases creadas antes de este cambio todavia tienen seed_strings, el tipo
+-- seed_category y las columnas de projects: se retiran aqui.
+-- DESTRUCTIVO: borra cualquier dato que quedara en esas columnas/tabla.
+-- El orden importa: primero la columna que referencia seed_strings (arrastra
+-- su FK), luego la tabla, luego el tipo que usaba esa tabla.
+-- ---------------------------------------------------------------------------
+
+alter table if exists projects drop column if exists seed_string_id;
+alter table if exists projects drop column if exists seed_string_value;
+drop table if exists seed_strings;
+drop type if exists seed_category;
 
 -- ---------------------------------------------------------------------------
 -- Utilidad: updated_at automatico
@@ -152,30 +167,6 @@ create trigger technologies_updated_at before update on technologies
   for each row execute function set_updated_at();
 
 -- ---------------------------------------------------------------------------
--- seed_strings
--- ---------------------------------------------------------------------------
-
-create table if not exists seed_strings (
-  id          text primary key,
-  name        text not null,
-  category    seed_category not null,
-  value       text not null,
-  description text not null default '',
-  directives  jsonb not null default '{}'::jsonb,
-  is_preset   boolean not null default false,
-  owner_id    uuid references profiles(id) on delete cascade,
-  created_at  timestamptz not null default now(),
-  updated_at  timestamptz not null default now()
-);
-
-create index if not exists seed_strings_owner_idx on seed_strings (owner_id);
-create index if not exists seed_strings_category_idx on seed_strings (category);
-
-drop trigger if exists seed_strings_updated_at on seed_strings;
-create trigger seed_strings_updated_at before update on seed_strings
-  for each row execute function set_updated_at();
-
--- ---------------------------------------------------------------------------
 -- landing_categories (catalogo de apoyo para filtros)
 -- ---------------------------------------------------------------------------
 
@@ -217,8 +208,6 @@ create table if not exists projects (
   visual               jsonb not null default '{}'::jsonb,
   technical            jsonb not null default '{}'::jsonb,
   content              jsonb not null default '{}'::jsonb,
-  seed_string_id       text references seed_strings(id) on delete set null,
-  seed_string_value    text,
   negative_constraints text[] not null default '{}',
   discover             jsonb,
   define               jsonb,

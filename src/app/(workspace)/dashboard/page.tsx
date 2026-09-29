@@ -8,7 +8,6 @@ import {
   PanelsTopLeft,
   Plus,
   Settings,
-  Sparkles,
   SquareTerminal,
 } from 'lucide-react';
 
@@ -114,7 +113,7 @@ export default async function DashboardPage() {
                 <EmptyState
                   icon={PanelsTopLeft}
                   title="Aun no has creado ningun proyecto"
-                  description="Un proyecto guarda el brief, el stack, la Seed String y las restricciones. Es el punto de partida de todo prompt."
+                  description="Un proyecto guarda el brief, el stack y las restricciones. Es el punto de partida de todo prompt."
                   action={
                     <LinkButton href="/projects/new" variant="primary" size="sm">
                       Crear el primero
@@ -157,7 +156,6 @@ export default async function DashboardPage() {
                   { href: '/prompt-studio', icon: SquareTerminal, label: 'Generador de prompts', hint: 'Componer y ejecutar' },
                   { href: '/library', icon: BookMarked, label: 'Banco de Landing Pages', hint: 'Reutilizar y versionar' },
                   { href: '/technologies', icon: Boxes, label: 'Tecnologias', hint: 'Reglas por stack' },
-                  { href: '/seeds', icon: Sparkles, label: 'Seed Strings', hint: 'Direccion creativa' },
                   { href: '/settings', icon: Settings, label: 'Proveedores de IA', hint: 'Gemini, Groq, Ollama o demo' },
                 ].map((item) => {
                   const Icon = item.icon;

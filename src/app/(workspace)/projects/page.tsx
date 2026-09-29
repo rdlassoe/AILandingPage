@@ -43,7 +43,7 @@ export default async function ProjectsPage({
       <PageHeader
         eyebrow="Define"
         title="Proyectos"
-        description="Cada proyecto guarda el brief, el stack, la Seed String y las restricciones que alimentan el Prompt Engine."
+        description="Cada proyecto guarda el brief, el stack y las restricciones que alimentan el Prompt Engine."
         actions={
           <LinkButton href="/projects/new" variant="primary">
             <Plus className="size-4" aria-hidden="true" />

@@ -8,8 +8,6 @@ import type {
   Project,
   PromptConflict,
   PromptSection,
-  SeedDirectives,
-  SeedString,
   Technology,
   VariationStrategy,
 } from './domain';
@@ -22,9 +20,14 @@ import type { LLMGenerationConfig, ProviderId } from './llm';
 export interface PromptBuildInput {
   project: Project;
   technologies: Technology[];
-  seed: SeedString | null;
-  /** Seed escrita a mano que sobrescribe la seleccionada. */
-  customSeedValue?: string | null;
+  /**
+   * El string aleatorio de la Seed (tecnica String Seed of Thought). Se
+   * genera de nuevo en cada ejecucion — nunca se elige de un catalogo ni se
+   * escribe a mano — y viaja tal cual a la seccion SEED STRING: es el propio
+   * modelo (o, en modo demo, el hash deterministico de `brief-parser.ts`)
+   * quien lo manipula para derivar una direccion creativa.
+   */
+  randomSeedString: string;
   negativeConstraints: string[];
   /** Tecnicas de diseno activadas por el usuario. */
   designTechniques: DesignTechniqueId[];
@@ -32,15 +35,19 @@ export interface PromptBuildInput {
   define?: DefineSpec | null;
 }
 
+/**
+ * Las 8 tecnicas de "8 Tecnicas Avanzadas de Diseno de Landing Pages con IA".
+ * Sustituyen a la lista anterior (ver docs/PROMPT_ENGINE.md).
+ */
 export type DesignTechniqueId =
+  | 'seed-strings'
+  | 'ambitious-prompts'
+  | 'subagent-feedback'
+  | 'image-generation'
+  | 'video-generation'
   | 'subtractive-design'
-  | 'human-copywriting'
-  | 'visual-hierarchy'
-  | 'progressive-disclosure'
-  | 'social-proof-discipline'
-  | 'seed-anchoring'
-  | 'micro-copy'
-  | 'performance-budget';
+  | 'negative-constraints-plus'
+  | 'human-writing';
 
 export interface DesignTechnique {
   id: DesignTechniqueId;
@@ -129,12 +136,32 @@ export interface GenerateLandingInput {
   promptContent?: string;
   systemInstruction?: string;
   promptId?: string;
+  /**
+   * Version del prompt ya compuesta y persistida (via `composeAndPersistPrompt`).
+   * Si viene, se genera a partir de ella sin recomponer nada.
+   */
+  promptVersionId?: string;
   providerId?: ProviderId;
   model?: string;
   config?: Partial<LLMGenerationConfig>;
   /** Etiqueta de la version de landing resultante. */
   label?: string;
   allowCache?: boolean;
+}
+
+/** Entrada de `composeAndPersistPrompt`: compone el prompt final y lo persiste sin generar HTML. */
+export interface ComposePromptInput {
+  ownerId: string;
+  projectId: string;
+  promptId?: string;
+  providerId?: ProviderId;
+  model?: string;
+}
+
+export interface ComposePromptResult {
+  built: BuiltPrompt;
+  promptId: string;
+  promptVersionId: string;
 }
 
 export interface GenerateLandingResult {
@@ -184,10 +211,18 @@ export interface RefineInput {
  * Seed Engine
  * ---------------------------------------------------------------------- */
 
-export interface SeedResolution {
-  value: string;
-  directives: SeedDirectives;
-  source: 'preset' | 'custom' | 'generated' | 'none';
+/**
+ * Resultado de generar el string aleatorio de la tecnica String Seed of
+ * Thought (Misaki & Akiba, ICLR 2026). Deliberadamente NO incluye directrices
+ * de diseno ya traducidas: eso era un paso intermedio que ya no existe —
+ * quien reciba `randomString` (el Prompt Composer via LLM, o el hash
+ * deterministico de Mock) es quien lo manipula para derivar una direccion
+ * creativa, no este motor.
+ */
+export interface RandomSeedResult {
+  randomString: string;
+  /** true si se produjo con el PRNG del modo demo, no con un LLM real. */
+  isMock: boolean;
 }
 
 export interface VariationInput {

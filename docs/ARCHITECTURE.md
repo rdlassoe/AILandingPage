@@ -34,21 +34,39 @@ PostgreSQL o a un JSON en disco.
 
 ## Flujo de una generación
 
+El Prompt Studio separa componer de generar en dos peticiones explícitas (ver decisión 10):
+primero se ve el prompt real, después se decide si generar el HTML con él.
+
 ```
-Usuario pulsa "Generar"
+Usuario pulsa "Generar prompt"
         │
         ▼
-POST /api/generations ──► Zod valida la entrada
+POST /api/prompts/compose ──► Zod valida la entrada
+        │
+        ▼
+composeAndPersistPrompt (landing-generator)
+  1. carga el proyecto y comprueba que es generable
+  2. prompt-engine compone las 17 secciones (borrador determinista)
+       · composer resuelve el stack y sus conflictos
+       · SSoT Seed Engine genera el string aleatorio de la Seed
+       · design-techniques inyecta las técnicas activas
+  3. con proveedor real: dos llamadas LLM más reescriben el borrador
+     entero (Seed + composición) — ver decisión 9
+  4. guarda prompt + prompt_version  ◄── trazabilidad
+        │
+        ▼
+El usuario revisa el prompt ya compuesto (17 secciones) en pantalla
+        │
+        ▼
+Usuario pulsa "Generar HTML"
+        │
+        ▼
+POST /api/generations (con promptVersionId) ──► Zod valida la entrada
         │
         ▼
 landing-generator
-  1. carga el proyecto y comprueba que es generable
-  2. prompt-engine compone las 17 secciones
-       · composer resuelve el stack y sus conflictos
-       · seed-engine traduce la Seed a directrices concretas
-       · design-techniques inyecta las técnicas activas
-  3. guarda prompt + prompt_version  ◄── trazabilidad
-  4. crea generations(status='pending')
+  genera directo desde esa prompt_version, sin recomponer nada
+  crea generations(status='pending')
         │
         ▼
 llm-orchestrator
@@ -201,13 +219,86 @@ apunta a la versión concreta que la produjo.
 **Motivo.** La pregunta «¿qué prompt produjo esta página?» tiene que poder responderse
 siempre. También permite comparar versiones y reproducir una generación.
 
-### 9. Prompt determinista
+### 9. El prompt lo escribe un LLM, no solo el código
 
-**Decisión.** `buildLandingPrompt` es una función pura: mismo proyecto, mismo prompt.
+**Decisión (revisada).** `buildLandingPrompt` sigue existiendo como función pura —mismo
+proyecto, mismo borrador— pero con un proveedor real ya no es lo último que ocurre. Es el
+**borrador**: `buildPromptForProject` (`landing-generator`) lo pasa por dos llamadas más al
+LLM antes de guardarlo como versión definitiva:
 
-**Motivo.** Hace posible versionar, cachear por hash y diferenciar los cambios del usuario
-de los del sistema. La diversidad creativa se introduce de forma explícita mediante la Seed
-String, no por variabilidad accidental del ensamblado.
+1. **`generateRandomSeedString`** genera el string aleatorio de la Seed con la técnica *String
+   Seed of Thought* (Misaki & Akiba, ICLR 2026) — solo eso, sin traducirlo a nada todavía.
+   Se ejecuta **siempre**: la Seed ya no es una elección del proyecto ni existe un catálogo
+   que consultar (ver [`SEED_ENGINE_MIGRATION.md`](SEED_ENGINE_MIGRATION.md)), así que no hay
+   ninguna condición que la salte.
+2. **`composePromptViaLLM`** reescribe el borrador de 17 secciones. El stack tecnológico (lo
+   elige el usuario, no el LLM) y las restricciones negativas viajan como bloques que el
+   modelo debe copiar tal cual. La sección `SEED STRING` es distinta a propósito: en el
+   borrador solo trae el string en crudo, y es este mismo modelo quien debe **manipularlo**
+   (suma + módulo, hash…) para derivar la dirección creativa y escribirla ahí — exactamente
+   la mitad de la técnica que el paso anterior no hizo. El resto —contexto, objetivo,
+   dirección visual, copy…— lo redacta libremente.
+
+El **modo demo sigue siendo 100 % determinista**: usa el borrador de `buildLandingPrompt`
+sin pasar por la segunda llamada, y el string de la Seed lo deriva un PRNG real
+(`generateRandomSeedForMock`, `crypto.randomBytes`), no un LLM. Como no hay razonamiento que
+lo manipule, `brief-parser.ts` (Mock) hashea el string en código para elegir una familia de
+estilo interna. `resolveProvider` decide esto mismo que decidirá el orquestador al ejecutar
+de verdad, así que un proveedor real sin configurar tampoco llega a la llamada de
+composición: cae al mismo camino que el modo demo.
+
+**Motivo.** Determinismo total facilitaba versionar y cachear por hash, pero congelaba la
+redacción del encargo a lo que el código sabía escribir de antemano. Se cambia
+deliberadamente: la trazabilidad no depende de poder *recalcular* el mismo prompt
+ejecutando la función dos veces, sino de que cada prompt —lo redacte quien lo redacte— quede
+guardado de forma inmutable en `prompt_versions`. Eso no cambia.
+
+**Coste.** Una generación con proveedor real pasa de 1 llamada a 3 (Seed + composición +
+landing), del mismo orden que ya suponía activar DISCOVER. Si el modelo no sigue el formato
+de 17 secciones exigido, se cae al borrador determinista en vez de fallar: nunca se deja al
+usuario sin prompt.
+
+**Restricción heredada.** El refinamiento y las variantes **no** vuelven a llamar a
+`buildPromptForProject`: leen las `sections` ya guardadas en la `prompt_version` que produjo
+la Landing Page actual. Recomponerlas de nuevo costaría dos llamadas más solo para extraer
+un fragmento, y como ya no es determinista, el resultado podría no coincidir con lo que
+realmente generó el HTML que se está corrigiendo.
+
+### 10. Componer el prompt es un paso explícito, no un efecto colateral de generar
+
+**Decisión.** `composeAndPersistPrompt` (`landing-generator`) es una función nueva y separada
+de `generateLanding`: hace solo los pasos 2-6 de la decisión anterior —compone el prompt, con
+LLM real si aplica, y lo guarda como `prompt_version`— sin generar ningún HTML. La expone
+`POST /api/prompts/compose`. `generateLanding` gana un camino nuevo: si la petición trae un
+`promptVersionId` ya persistido, genera directo desde esa versión sin recomponer nada; sin
+él, se comporta exactamente igual que antes (compone y genera en la misma llamada, el camino
+que sigue usando cualquier otro consumidor de `POST /api/generations`).
+
+**Motivo.** Pulsar "Generar" en el Prompt Studio componía el prompt y generaba el HTML en una
+sola petición atómica: el usuario nunca veía el prompt real que un LLM había escrito —con la
+Seed ya manipulada— antes de gastar la llamada de generación, la más cara en tokens y tiempo.
+La única vista previa disponible (`/api/prompts/generate`) es una aproximación determinista
+que nunca invoca un LLM (ver [`PROMPT_ENGINE.md`](PROMPT_ENGINE.md)); con un proveedor real,
+lo que el usuario veía y lo que de verdad se enviaba al modelo podían ser distintos. Separar
+los dos pasos deja revisar el prompt exacto —y decidir si generar o no— antes de comprometerse
+a esa segunda llamada.
+
+**Alternativas.** Mostrar el prompt real solo *después* de generar (no evita gastar la llamada
+de generación con un prompt que el usuario no habría aprobado); mantener una sola petición
+mandando el resultado intermedio en streaming (más frágil que dos endpoints independientes, y
+el proyecto no usa streaming en ningún otro punto, ver "Límites conocidos" en
+[`DEVELOPMENT.md`](DEVELOPMENT.md)).
+
+**Coste.** Dos peticiones en vez de una para el camino feliz. Se acepta porque componer ya es,
+la mayoría de las veces, más barato que generar (dos llamadas LLM cortas frente a una larga), y
+porque evita generar HTML a partir de un prompt que el usuario podría rechazar.
+
+**Consecuencia en la interfaz.** El Prompt Studio ya no compone un borrador gratuito al cargar
+la página ni al cambiar de técnicas: el panel de prompt arranca vacío y "Generar prompt" es la
+única forma de poblarlo. "Generar HTML" queda deshabilitado hasta que existe una
+`prompt_version` compuesta. Si el usuario edita el texto después de componer, se crea una
+versión adicional (`changeNote: 'Prompt editado manualmente en el Prompt Studio'`) ligada al
+mismo `Prompt`, igual que ya hacía el camino sin `promptVersionId`.
 
 ---
 

@@ -30,7 +30,6 @@ const FILES = [
 const EXPECTED_TABLES = [
   'profiles',
   'technologies',
-  'seed_strings',
   'prompt_templates',
   'landing_categories',
   'projects',
@@ -48,7 +47,6 @@ const EXPECTED_TABLES = [
 const EXPECTED_ENUMS = [
   'provider_id',
   'technology_category',
-  'seed_category',
   'project_status',
   'landing_status',
   'generation_status',
@@ -236,7 +234,7 @@ async function inspect(client) {
 
   const counts = {};
   const presentTables = new Set(tables.map((r) => r.table_name));
-  for (const table of ['technologies', 'seed_strings', 'prompt_templates', 'llm_models']) {
+  for (const table of ['technologies', 'prompt_templates', 'llm_models']) {
     if (!presentTables.has(table)) continue;
     const { rows } = await client.query(`select count(*)::int as total from ${table}`);
     counts[table] = rows[0].total;
@@ -275,24 +273,22 @@ function report(state) {
     fail(`RLS desactivado en: ${state.rlsDisabled.join(', ')}`);
   }
 
-  if (state.policies >= 26) {
+  if (state.policies >= 22) {
     ok(`${state.policies} politicas RLS definidas`);
   } else if (state.policies > 0) {
-    warn(`${state.policies} politicas RLS (se esperaban 26 o mas)`);
+    warn(`${state.policies} politicas RLS (se esperaban 22 o mas)`);
   } else {
     fail('Sin politicas RLS');
   }
 
   const seeded =
     (state.counts.technologies ?? 0) > 0 &&
-    (state.counts.seed_strings ?? 0) > 0 &&
     (state.counts.prompt_templates ?? 0) > 0;
 
   if (seeded) {
     ok(
       `Catalogo cargado: ${state.counts.technologies} tecnologias, ` +
-        `${state.counts.seed_strings} seeds, ${state.counts.prompt_templates} plantillas, ` +
-        `${state.counts.llm_models ?? 0} modelos`,
+        `${state.counts.prompt_templates} plantillas, ${state.counts.llm_models ?? 0} modelos`,
     );
   } else if (missingTables.length === 0) {
     fail('El catalogo esta vacio: falta ejecutar seed.sql');

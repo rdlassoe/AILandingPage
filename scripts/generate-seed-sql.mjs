@@ -16,7 +16,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 
-const { PRESET_TECHNOLOGIES, PRESET_SEEDS, LANDING_CATEGORIES } = await import(
+const { PRESET_TECHNOLOGIES, LANDING_CATEGORIES } = await import(
   pathToFileURL(join(root, 'src/lib/data/catalog.ts')).href
 );
 const { PRESET_PROMPT_TEMPLATES } = await import(
@@ -149,31 +149,6 @@ for (const tech of PRESET_TECHNOLOGIES) {
 
 push(
   '-- ---------------------------------------------------------------------------',
-  `-- Seed Strings (${PRESET_SEEDS.length})`,
-  '-- ---------------------------------------------------------------------------',
-  '',
-);
-
-for (const seed of PRESET_SEEDS) {
-  push(
-    'insert into seed_strings (id, name, category, value, description, directives, is_preset, owner_id) values (',
-    `  ${s(seed.id)}, ${s(seed.name)}, ${s(seed.category)}::seed_category,`,
-    `  ${s(seed.value)},`,
-    `  ${s(seed.description)},`,
-    `  ${json(seed.directives)},`,
-    '  true, null',
-    ') on conflict (id) do update set',
-    '  name = excluded.name,',
-    '  category = excluded.category,',
-    '  value = excluded.value,',
-    '  description = excluded.description,',
-    '  directives = excluded.directives;',
-    '',
-  );
-}
-
-push(
-  '-- ---------------------------------------------------------------------------',
   `-- Plantillas de prompt (${PRESET_PROMPT_TEMPLATES.length})`,
   '-- ---------------------------------------------------------------------------',
   '',
@@ -202,6 +177,5 @@ writeFileSync(output, lines.join('\n'), 'utf8');
 
 console.log(
   `seed.sql generado: ${PRESET_TECHNOLOGIES.length} tecnologias, ` +
-    `${PRESET_SEEDS.length} seeds, ${PRESET_PROMPT_TEMPLATES.length} plantillas, ` +
-    `${MODELS.length} modelos.`,
+    `${PRESET_PROMPT_TEMPLATES.length} plantillas, ${MODELS.length} modelos.`,
 );

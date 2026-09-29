@@ -1,6 +1,7 @@
 import { composeTechnologies } from './composer';
 import { getTechniques } from './design-techniques';
-import { renderSeedBlock, resolveSeed } from './seed-engine';
+import { DEFAULT_SYSTEM_INSTRUCTION, SECTION_ORDER, SECTION_TITLES } from './sections';
+import { renderSeedBlock } from './seed-engine';
 import { estimateTokens } from '@/lib/utils';
 import type { DefineSpec, Project, PromptSection, PromptSectionId, SectionSpec } from '@/types/domain';
 import type { BuiltPrompt, PromptBuildInput } from '@/types/services';
@@ -9,6 +10,8 @@ export * from './design-techniques';
 export * from './seed-engine';
 export * from './composer';
 export * from './template';
+export * from './llm-prompt-composer';
+export * from './sections';
 
 /**
  * Prompt Engine
@@ -19,62 +22,6 @@ export * from './template';
  * proyecto produce siempre el mismo prompt, lo que hace posible versionarlo
  * y cachear la generacion.
  */
-
-const SECTION_TITLES: Record<PromptSectionId, string> = {
-  ROLE: 'ROLE',
-  CONTEXT: 'CONTEXT',
-  OBJECTIVE: 'OBJECTIVE',
-  TARGET_AUDIENCE: 'TARGET AUDIENCE',
-  BUSINESS_GOAL: 'BUSINESS GOAL',
-  VISUAL_DIRECTION: 'VISUAL DIRECTION',
-  SEED_STRING: 'SEED STRING',
-  INFORMATION_ARCHITECTURE: 'INFORMATION ARCHITECTURE',
-  COPY_REQUIREMENTS: 'COPY REQUIREMENTS',
-  TECHNOLOGY: 'TECHNOLOGY',
-  FUNCTIONAL_REQUIREMENTS: 'FUNCTIONAL REQUIREMENTS',
-  RESPONSIVE_REQUIREMENTS: 'RESPONSIVE REQUIREMENTS',
-  ACCESSIBILITY: 'ACCESSIBILITY',
-  SUBTRACTIVE_DESIGN: 'SUBTRACTIVE DESIGN',
-  NEGATIVE_CONSTRAINTS: 'NEGATIVE CONSTRAINTS',
-  QUALITY_CRITERIA: 'QUALITY CRITERIA',
-  OUTPUT_FORMAT: 'OUTPUT FORMAT',
-};
-
-const SECTION_ORDER: PromptSectionId[] = [
-  'ROLE',
-  'CONTEXT',
-  'OBJECTIVE',
-  'TARGET_AUDIENCE',
-  'BUSINESS_GOAL',
-  'VISUAL_DIRECTION',
-  'SEED_STRING',
-  'INFORMATION_ARCHITECTURE',
-  'COPY_REQUIREMENTS',
-  'TECHNOLOGY',
-  'FUNCTIONAL_REQUIREMENTS',
-  'RESPONSIVE_REQUIREMENTS',
-  'ACCESSIBILITY',
-  'SUBTRACTIVE_DESIGN',
-  'NEGATIVE_CONSTRAINTS',
-  'QUALITY_CRITERIA',
-  'OUTPUT_FORMAT',
-];
-
-/** Instruccion de sistema por defecto si no hay plantilla en base de datos. */
-export const DEFAULT_SYSTEM_INSTRUCTION = [
-  'Eres un equipo compuesto por un director de arte digital, un disenador de producto senior,',
-  'un copywriter de conversion y un desarrollador front-end. Trabajas para clientes exigentes',
-  'que rechazan resultados genericos.',
-  '',
-  'Reglas invariables:',
-  '1. Devuelves UNICAMENTE codigo. Nunca escribes introducciones, explicaciones ni despedidas.',
-  '2. La primera linea de tu respuesta es exactamente "<!DOCTYPE html>".',
-  '3. La ultima linea de tu respuesta es exactamente "</html>".',
-  '4. No envuelves la respuesta en bloques de markdown.',
-  '5. Todo el contenido textual es real y especifico del proyecto: nunca lorem ipsum.',
-  '6. Cada interaccion que anuncias debe estar implementada y funcionar.',
-  '7. Cumples las restricciones negativas como requisitos duros, no como sugerencias.',
-].join('\n');
 
 const DEFAULT_SECTIONS: SectionSpec[] = [
   { id: 'hero', name: 'Hero', purpose: 'Decir que es, para quien y que hacer a continuacion', order: 1, contentNotes: '', required: true },
@@ -88,7 +35,6 @@ const DEFAULT_SECTIONS: SectionSpec[] = [
 
 export function buildLandingPrompt(input: PromptBuildInput): BuiltPrompt {
   const { project } = input;
-  const seed = resolveSeed(input.seed, input.customSeedValue);
   const technology = composeTechnologies(input.technologies);
   const techniques = getTechniques(input.designTechniques);
   const architecture = resolveArchitecture(project, input.define ?? project.define);
@@ -184,7 +130,7 @@ export function buildLandingPrompt(input: PromptBuildInput): BuiltPrompt {
     ].join('\n'),
   );
 
-  add('SEED_STRING', renderSeedBlock(seed));
+  add('SEED_STRING', renderSeedBlock(input.randomSeedString));
 
   add(
     'INFORMATION_ARCHITECTURE',
@@ -326,7 +272,7 @@ export function buildLandingPrompt(input: PromptBuildInput): BuiltPrompt {
     sections: ordered,
     conflicts: technology.conflicts,
     technologyIds: technology.effective.map((tech) => tech.id),
-    seedStringValue: seed.source === 'none' ? null : seed.value,
+    seedStringValue: input.randomSeedString,
     negativeConstraints,
     estimatedTokens: estimateTokens(content) + estimateTokens(DEFAULT_SYSTEM_INSTRUCTION),
   };

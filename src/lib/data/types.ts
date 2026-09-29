@@ -10,7 +10,6 @@ import type {
   Prompt,
   PromptTemplate,
   PromptVersion,
-  SeedString,
   Technology,
 } from '@/types/domain';
 import type { ProviderId } from '@/types/llm';
@@ -26,9 +25,6 @@ export type NewTechnology = Omit<Technology, 'id' | 'createdAt' | 'updatedAt' | 
   id?: string;
 };
 export type TechnologyPatch = Partial<Omit<Technology, 'id' | 'createdAt' | 'updatedAt' | 'ownerId'>>;
-
-export type NewSeedString = Omit<SeedString, 'id' | 'createdAt' | 'updatedAt' | 'ownerId' | 'isPreset'>;
-export type SeedStringPatch = Partial<NewSeedString>;
 
 export type NewPrompt = Omit<Prompt, 'id' | 'ownerId' | 'createdAt' | 'updatedAt' | 'currentVersion'>;
 export type PromptPatch = Partial<Omit<Prompt, 'id' | 'ownerId' | 'createdAt' | 'updatedAt'>>;
@@ -105,7 +101,6 @@ export interface GlobalSearchResults {
   prompts: Prompt[];
   landingPages: LandingPage[];
   technologies: Technology[];
-  seeds: SeedString[];
 }
 
 /* -------------------------------------------------------------------------
@@ -136,13 +131,6 @@ export interface DataStore {
   createTechnology(userId: string, input: NewTechnology): Promise<Technology>;
   updateTechnology(userId: string, id: string, patch: TechnologyPatch): Promise<Technology>;
   deleteTechnology(userId: string, id: string): Promise<void>;
-
-  /* Seeds */
-  listSeeds(userId: string | null): Promise<SeedString[]>;
-  getSeed(id: string): Promise<SeedString | null>;
-  createSeed(userId: string, input: NewSeedString): Promise<SeedString>;
-  updateSeed(userId: string, id: string, patch: SeedStringPatch): Promise<SeedString>;
-  deleteSeed(userId: string, id: string): Promise<void>;
 
   /* Proyectos */
   listProjects(userId: string, filter?: ProjectFilter): Promise<Project[]>;

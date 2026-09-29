@@ -55,6 +55,12 @@ export interface Technology extends Timestamps {
  * Seed Strings (SSoT)
  * ---------------------------------------------------------------------- */
 
+/**
+ * Familias de estilo internas del Mock Provider. No es un catalogo que el
+ * usuario elija: el modo demo deriva una de estas 13 categorias hasheando el
+ * string aleatorio de la Seed (suma de codigos + modulo), para variar su
+ * salida sin depender de un LLM. Ver `src/lib/llm/mock/brief-parser.ts`.
+ */
 export type SeedCategory =
   | 'editorial'
   | 'bauhaus'
@@ -69,29 +75,6 @@ export type SeedCategory =
   | 'luxury'
   | 'natural'
   | 'experimental';
-
-export interface SeedDirectives {
-  composition: string;
-  typography: string;
-  color: string;
-  hierarchy: string;
-  spacing: string;
-  imagery: string;
-  components: string;
-}
-
-export interface SeedString extends Timestamps {
-  id: string;
-  name: string;
-  category: SeedCategory;
-  /** Cadena semantica: "diseno suizo + laboratorio industrial + ...". */
-  value: string;
-  description: string;
-  /** Como debe traducirse la seed a decisiones visuales concretas. */
-  directives: SeedDirectives;
-  isPreset: boolean;
-  ownerId: string | null;
-}
 
 /* -------------------------------------------------------------------------
  * Proyectos
@@ -201,8 +184,6 @@ export interface Project extends Timestamps {
   visual: ProjectVisual;
   technical: ProjectTechnical;
   content: ProjectContent;
-  seedStringId: string | null;
-  seedStringValue: string | null;
   negativeConstraints: string[];
   discover: DiscoverInsights | null;
   define: DefineSpec | null;
@@ -290,6 +271,7 @@ export interface PromptVersion extends Timestamps {
   systemInstruction: string;
   sections: PromptSection[];
   technologyIds: string[];
+  /** El string aleatorio de la Seed usado en esta version (tecnica SSoT). */
   seedStringValue: string | null;
   negativeConstraints: string[];
   conflicts: PromptConflict[];
@@ -313,7 +295,14 @@ export type GenerationStatus =
   | 'rate_limited'
   | 'cancelled';
 
-export type GenerationKind = 'landing' | 'refinement' | 'variation' | 'critique' | 'discover';
+export type GenerationKind =
+  | 'landing'
+  | 'refinement'
+  | 'variation'
+  | 'critique'
+  | 'discover'
+  | 'seed'
+  | 'prompt_generation';
 
 export interface Generation extends Timestamps {
   id: string;

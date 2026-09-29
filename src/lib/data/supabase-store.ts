@@ -10,7 +10,6 @@ import {
   fromPrompt,
   fromPromptVersion,
   fromReview,
-  fromSeed,
   fromTechnology,
   toGeneration,
   toLandingPage,
@@ -21,7 +20,6 @@ import {
   toPromptTemplate,
   toPromptVersion,
   toReview,
-  toSeed,
   toTechnology,
 } from './supabase-mappers';
 import type {
@@ -39,13 +37,11 @@ import type {
   NewProject,
   NewPrompt,
   NewPromptVersion,
-  NewSeedString,
   NewTechnology,
   ProjectFilter,
   ProjectPatch,
   PromptFilter,
   PromptPatch,
-  SeedStringPatch,
   TechnologyPatch,
 } from './types';
 import { AppException, notFound } from '@/lib/errors';
@@ -60,7 +56,6 @@ import type {
   Prompt,
   PromptTemplate,
   PromptVersion,
-  SeedString,
   Technology,
 } from '@/types/domain';
 
@@ -177,49 +172,6 @@ export class SupabaseDataStore implements DataStore {
   async deleteTechnology(userId: string, id: string): Promise<void> {
     const { error } = await this.db.from('technologies').delete().eq('id', id).eq('owner_id', userId);
     if (error) this.fail(error, 'eliminar la tecnologia');
-  }
-
-  /* ----------------------------------------------------------------- Seeds */
-
-  async listSeeds(userId: string | null): Promise<SeedString[]> {
-    const query = this.db.from('seed_strings').select('*').order('is_preset', { ascending: false }).order('name');
-    const { data, error } = userId
-      ? await query.or(`owner_id.is.null,owner_id.eq.${userId}`)
-      : await query.is('owner_id', null);
-    if (error) this.fail(error, 'cargar las Seed Strings');
-    return this.rows(data).map(toSeed);
-  }
-
-  async getSeed(id: string): Promise<SeedString | null> {
-    const { data, error } = await this.db.from('seed_strings').select('*').eq('id', id).maybeSingle();
-    if (error) this.fail(error, 'cargar la Seed String');
-    return data ? toSeed(data as Row) : null;
-  }
-
-  async createSeed(userId: string, input: NewSeedString): Promise<SeedString> {
-    const payload = fromSeed({ ...input, ownerId: userId, isPreset: false });
-    payload.id = crypto.randomUUID();
-    const { data, error } = await this.db.from('seed_strings').insert(payload).select('*').single();
-    if (error) this.fail(error, 'guardar la Seed String');
-    return toSeed(data as Row);
-  }
-
-  async updateSeed(userId: string, id: string, patch: SeedStringPatch): Promise<SeedString> {
-    const { data, error } = await this.db
-      .from('seed_strings')
-      .update(fromSeed(patch))
-      .eq('id', id)
-      .eq('owner_id', userId)
-      .select('*')
-      .maybeSingle();
-    if (error) this.fail(error, 'actualizar la Seed String');
-    if (!data) throw notFound('esa Seed String entre las tuyas');
-    return toSeed(data as Row);
-  }
-
-  async deleteSeed(userId: string, id: string): Promise<void> {
-    const { error } = await this.db.from('seed_strings').delete().eq('id', id).eq('owner_id', userId);
-    if (error) this.fail(error, 'eliminar la Seed String');
   }
 
   /* ------------------------------------------------------------- Proyectos */
@@ -649,12 +601,11 @@ export class SupabaseDataStore implements DataStore {
 
   async search(userId: string, query: string): Promise<GlobalSearchResults> {
     const like = `%${query}%`;
-    const [projects, prompts, landings, technologies, seeds] = await Promise.all([
+    const [projects, prompts, landings, technologies] = await Promise.all([
       this.db.from('projects').select('*').eq('owner_id', userId).ilike('basics->>name', like).limit(5),
       this.db.from('prompts').select('*').eq('owner_id', userId).ilike('name', like).limit(5),
       this.db.from('landing_pages').select('*').eq('owner_id', userId).ilike('name', like).limit(5),
       this.db.from('technologies').select('*').ilike('name', like).limit(5),
-      this.db.from('seed_strings').select('*').ilike('name', like).limit(5),
     ]);
 
     return {
@@ -662,7 +613,6 @@ export class SupabaseDataStore implements DataStore {
       prompts: this.rows(prompts.data).map(toPrompt),
       landingPages: this.rows(landings.data).map(toLandingPage),
       technologies: this.rows(technologies.data).map(toTechnology),
-      seeds: this.rows(seeds.data).map(toSeed),
     };
   }
 }

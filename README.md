@@ -38,7 +38,7 @@ Groq ni Ollama.
 | **Project Builder** | Asistente de 5 pasos: qué, para quién, con qué stack, con qué estilo, qué evitar. |
 | **Discover / Define** | Análisis del encargo (nicho, público, fricciones) y derivación de la arquitectura de información. |
 | **Technology Manager** | Las tecnologías son datos: cada una aporta instrucciones, restricciones y requisitos de salida al prompt. |
-| **Seed String Engine** | Direcciones creativas que anclan el contexto semántico y evitan que todas las páginas converjan. |
+| **Seed String Engine** | Genera un string aleatorio en cada ejecución (técnica *String Seed of Thought*); no hay catálogo, lo manipula el propio modelo para derivar una dirección creativa. |
 | **Prompt Engine** | Ensambla un prompt de 17 secciones canónicas de forma determinista. |
 | **Prompt Composer** | Combina varias tecnologías, detecta conflictos y resuelve prioridades. |
 | **LLM Orchestrator** | Punto único de contacto con los modelos: proveedor, modelo, timeout, reintento único, límite de uso. |
@@ -118,8 +118,8 @@ usa ese script: la aplicación no la necesita.
 2. `supabase/policies.sql` — Row Level Security.
 3. `supabase/seed.sql` — catálogo inicial.
 
-Ambas vías dejan lo mismo: **15 tablas, 8 tipos enumerados, 44 índices, 11 triggers y
-26 políticas RLS**, más 11 tecnologías, 11 Seed Strings, 9 plantillas y 12 modelos. Los
+Ambas vías dejan lo mismo: **14 tablas, 7 tipos enumerados, 41 índices, 10 triggers y
+22 políticas RLS**, más 11 tecnologías, 9 plantillas y 17 modelos. Los
 scripts son idempotentes: repetirlos no duplica nada.
 
 Después, rellena `NEXT_PUBLIC_SUPABASE_URL` y `NEXT_PUBLIC_SUPABASE_ANON_KEY`, reinicia el
@@ -173,11 +173,13 @@ npm run verify:flow -- --provider=ollama
 1. **Proyectos → Nuevo proyecto.** Cinco pasos; solo los dos primeros son obligatorios.
 2. **Ejecutar DISCOVER** en la ficha del proyecto. Analiza el encargo y deriva la
    arquitectura de información.
-3. **Prompt Studio.** El Prompt Engine compone el prompt con el brief, el stack, la Seed
-   String, las técnicas de diseño activas y las restricciones negativas. Puedes editarlo
-   antes de ejecutarlo.
-4. **Generar.** El orquestador elige proveedor y modelo, el validador normaliza la salida y
-   la vista previa la renderiza en un `iframe` aislado.
+3. **Prompt Studio → Generar prompt.** El Prompt Engine compone el prompt real (con LLM si
+   hay proveedor configurado) con el brief, el stack, un string aleatorio nuevo (Seed String,
+   técnica SSoT) y las técnicas de diseño activas, y lo persiste. Puedes revisarlo o editarlo
+   antes de generar.
+4. **Generar HTML.** Reutiliza ese mismo prompt ya compuesto (no lo recompone). El
+   orquestador elige proveedor y modelo, el validador normaliza la salida y la vista previa la
+   renderiza en un `iframe` aislado.
 5. **Auditar.** El Critic Engine devuelve problemas puntuados y acciones concretas.
 6. **Refinar.** Marcas las recomendaciones que aceptas; se genera una versión nueva.
 7. **Publicar.** La página queda en la biblioteca con su prompt, su versión y su historial.
@@ -198,7 +200,7 @@ src/
 │   ├── layout/               Shell, navegación, búsqueda global
 │   └── preview/              Preview Engine (iframe + srcDoc)
 ├── features/                 Componentes con lógica por dominio
-│   ├── projects/  studio/  library/  technologies/  seeds/  settings/
+│   ├── projects/  studio/  library/  technologies/  settings/
 ├── lib/
 │   ├── auth/                 Sesión (Supabase Auth o identidad local)
 │   ├── data/                 DataStore: interfaz + Supabase + local
@@ -226,8 +228,9 @@ Arquitectura y decisiones en [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 | --- | --- | --- |
 | `GET/POST` | `/api/projects` | Lista y crea proyectos. |
 | `GET/PATCH/DELETE` | `/api/projects/[id]` | Ficha de proyecto. |
-| `POST` | `/api/prompts/generate` | Compone el prompt **sin ejecutarlo**. |
-| `GET/POST` | `/api/generations` | Historial y generación de Landing Page. |
+| `POST` | `/api/prompts/generate` | Vista previa gratuita y determinista del prompt, **sin LLM**. |
+| `POST` | `/api/prompts/compose` | Compone el prompt real (con LLM si aplica) y lo persiste, **sin generar HTML**. |
+| `GET/POST` | `/api/generations` | Historial y generación de Landing Page (reutiliza un prompt ya compuesto si se le pasa `promptVersionId`). |
 | `POST` | `/api/generations/critique` | Ejecuta el Critic Engine. |
 | `POST` | `/api/generations/refine` | Regenera aplicando las mejoras aceptadas. |
 | `POST` | `/api/generations/variation` | Crea una variante como página independiente. |
@@ -237,7 +240,6 @@ Arquitectura y decisiones en [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 | `GET` | `/api/landings/[id]/versions` | Historial de versiones. |
 | `POST` | `/api/landings/[id]/reuse` | Clona el planteamiento a un proyecto nuevo. |
 | `GET/POST` | `/api/technologies` | Catálogo y alta de tecnologías propias. |
-| `GET/POST` | `/api/seeds` | Seed Strings. |
 | `GET` | `/api/providers` | Estado de los proveedores (sin secretos). |
 | `POST` | `/api/providers/test` | Prueba de conexión real (512 tokens de salida). |
 | `GET` | `/api/search` | Búsqueda global. |
@@ -352,8 +354,9 @@ plantilla `[YOUR-PASSWORD]` y que los caracteres especiales estén codificados p
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Capas, flujo de datos y decisiones arquitectónicas. |
 | [`docs/DATABASE.md`](docs/DATABASE.md) | Modelo de datos, relaciones y RLS. |
 | [`docs/LLM_PROVIDERS.md`](docs/LLM_PROVIDERS.md) | Capa de proveedores y cómo añadir uno nuevo. |
-| [`docs/PROMPT_ENGINE.md`](docs/PROMPT_ENGINE.md) | Las 17 secciones, Seed Strings y técnicas de diseño. |
+| [`docs/PROMPT_ENGINE.md`](docs/PROMPT_ENGINE.md) | Las 17 secciones, el motor de Seed String y técnicas de diseño. |
 | [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) | Convenciones, fases de construcción y checklist de QA. |
+| [`docs/SEED_ENGINE_MIGRATION.md`](docs/SEED_ENGINE_MIGRATION.md) | Estado de la migración del catálogo de Seeds al string aleatorio. |
 | [`docs/ENVIRONMENT.md`](docs/ENVIRONMENT.md) | Todas las variables de entorno. |
 
 ---

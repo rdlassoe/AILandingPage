@@ -31,7 +31,7 @@ Nueve fases, cada una verificada antes de pasar a la siguiente.
 | 1 | Base: Next.js, TypeScript, Tailwind, contratos de tipos, layout y navegación. | Completa |
 | 2 | Proyectos: asistente, CRUD, almacenamiento. | Completa |
 | 3 | Technology Engine: catálogo, selección, combinación y conflictos. | Completa |
-| 4 | Prompt Engine: plantillas, composición, Seed Strings, restricciones. | Completa |
+| 4 | Prompt Engine: plantillas, composición, Seed String Engine, restricciones. | Completa |
 | 5 | LLM Layer: interfaz, Mock, Gemini, Groq, orquestador. | Completa |
 | 6 | Landing Generator: generación, validación, preview. | Completa |
 | 7 | Critic Engine: auditoría, recomendaciones, refinamiento. | Completa |
@@ -88,6 +88,12 @@ ahí con su proveedor, modelo, estado y mensaje de error.
 
 Ningún componente llama a un proveedor LLM ni al SDK de Supabase directamente.
 
+Estado que debe compartirse entre el layout y una página (no solo dentro de un componente)
+vive en un React Context en `components/layout/`, con el valor inicial calculado en el
+Server Component del layout y una única fuente de verdad en cliente — así lo hace el
+proveedor de IA "activo" (`active-provider-context.tsx`): el Prompt Studio escribe en él al
+elegir proveedor, y el indicador de la barra lateral lo lee, sin recargar la página.
+
 ### Estilos
 
 Tailwind v4 con tokens en `src/app/globals.css`. Los colores se declaran como variables CSS
@@ -115,10 +121,12 @@ Para el catálogo común, añádela a `PRESET_TECHNOLOGIES` en `src/lib/data/cat
 ejecuta `npm run seed:sql`. Lo importante es `promptInstructions`: es el bloque que el
 Prompt Composer inyecta.
 
-### Una Seed String
+### La Seed String
 
-Desde la interfaz: **Seeds → Nueva Seed**. Rellena las siete directrices; sin ellas la Seed
-es solo texto decorativo y no cambiará el resultado.
+Ya no se crea desde la interfaz: no hay catálogo. Cada ejecución genera un string aleatorio
+nuevo (técnica *String Seed of Thought*) en [`seed-engine.ts`](../src/services/prompt-engine/seed-engine.ts),
+y es el propio modelo que compone el prompt quien lo manipula para derivar una dirección
+creativa. Detalle completo en [`SEED_ENGINE_MIGRATION.md`](SEED_ENGINE_MIGRATION.md).
 
 ### Una técnica de diseño
 

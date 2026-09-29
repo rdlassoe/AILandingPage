@@ -131,8 +131,8 @@ export function LandingActions({ landing }: { landing: LandingPage }) {
           Reutilizar en un proyecto nuevo
         </Button>
         <p className="text-xs text-faint">
-          Copia el brief, el stack, la Seed String y las restricciones a un proyecto nuevo para modificarlos
-          antes de volver a generar.
+          Copia el brief, el stack y las restricciones a un proyecto nuevo para modificarlos antes de
+          volver a generar. La Seed String se genera de nuevo en la siguiente ejecucion.
         </p>
       </div>
 

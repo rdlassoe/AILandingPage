@@ -10,15 +10,14 @@ import {
   Menu,
   PanelsTopLeft,
   Settings,
-  Sparkles,
   SquareTerminal,
   X,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
+import { useActiveProvider } from './active-provider-context';
 import { GlobalSearch } from './global-search';
 import { cn } from '@/lib/utils';
-import type { ProviderId } from '@/types/llm';
 
 interface NavItem {
   href: string;
@@ -33,7 +32,6 @@ const NAV: NavItem[] = [
   { href: '/prompt-studio', label: 'Prompt Studio', icon: SquareTerminal, description: 'Generar y refinar' },
   { href: '/library', label: 'Landing Library', icon: BookMarked, description: 'Banco de paginas' },
   { href: '/technologies', label: 'Tecnologias', icon: Boxes, description: 'Stack y reglas' },
-  { href: '/seeds', label: 'Seeds', icon: Sparkles, description: 'Direccion creativa' },
   { href: '/settings', label: 'Ajustes', icon: Settings, description: 'Proveedores de IA' },
 ];
 
@@ -41,13 +39,13 @@ export interface ShellInfo {
   displayName: string;
   email: string;
   storageMode: 'supabase' | 'local';
-  activeProvider: ProviderId;
-  providerConfigured: boolean;
 }
 
 export function AppShell({ info, children }: { info: ShellInfo; children: React.ReactNode }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const pathname = usePathname();
+  const { activeProviderId, providerStatuses } = useActiveProvider();
+  const activeProviderStatus = providerStatuses.find((status) => status.id === activeProviderId);
 
   return (
     <div className="min-h-dvh lg:grid lg:grid-cols-[244px_1fr]">
@@ -132,10 +130,10 @@ export function AppShell({ info, children }: { info: ShellInfo; children: React.
             <span className="text-faint">Proveedor</span>
             <span className="inline-flex items-center gap-1.5 font-mono uppercase tracking-wider text-muted">
               <span
-                className={cn('size-1.5 rounded-full', info.providerConfigured ? 'bg-ok' : 'bg-warn')}
+                className={cn('size-1.5 rounded-full', activeProviderStatus?.configured ? 'bg-ok' : 'bg-warn')}
                 aria-hidden="true"
               />
-              {info.activeProvider}
+              {activeProviderId}
             </span>
           </div>
           <div className="border-t border-line pt-2">

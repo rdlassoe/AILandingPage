@@ -25,8 +25,6 @@ export async function POST(request: Request) {
       visual: input.visual,
       technical: input.technical,
       content: input.content,
-      seedStringId: input.seedStringId,
-      seedStringValue: input.seedStringValue,
       negativeConstraints:
         input.negativeConstraints.length > 0 ? input.negativeConstraints : DEFAULT_NEGATIVE_CONSTRAINTS,
       discover: null,

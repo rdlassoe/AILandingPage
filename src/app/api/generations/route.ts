@@ -27,6 +27,7 @@ export async function POST(request: Request) {
         promptContent: input.promptContent,
         systemInstruction: input.systemInstruction,
         promptId: input.promptId,
+        promptVersionId: input.promptVersionId,
         providerId: input.providerId as ProviderId | undefined,
         model: input.model,
         config: input.config,

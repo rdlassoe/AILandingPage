@@ -9,9 +9,11 @@ interface RouteParams {
 /**
  * POST /api/landings/[id]/reuse
  *
- * Clona el proyecto que produjo la Landing Page (brief, stack, Seed String y
+ * Clona el proyecto que produjo la Landing Page (brief, stack y
  * restricciones) en un proyecto nuevo, listo para modificar antes de volver a
- * generar. No copia la pagina: copia las decisiones que la produjeron.
+ * generar. No copia la pagina: copia las decisiones que la produjeron. La
+ * Seed no se copia: se genera una nueva (tecnica SSoT) en la siguiente
+ * ejecucion, como en cualquier otro proyecto.
  */
 export async function POST(_request: Request, { params }: RouteParams) {
   const { id } = await params;
@@ -31,8 +33,6 @@ export async function POST(_request: Request, { params }: RouteParams) {
           visual: source.visual,
           technical: source.technical,
           content: source.content,
-          seedStringId: source.seedStringId,
-          seedStringValue: source.seedStringValue,
           negativeConstraints: source.negativeConstraints,
           discover: source.discover,
           define: source.define,
@@ -64,8 +64,6 @@ export async function POST(_request: Request, { params }: RouteParams) {
             constraints: [],
           },
           content: { sections: landing.metadata.sections, features: [], benefits: [], keyMessage: '', tone: 'directo' },
-          seedStringId: null,
-          seedStringValue: landing.metadata.seedStringValue,
           negativeConstraints: [],
           discover: null,
           define: null,
