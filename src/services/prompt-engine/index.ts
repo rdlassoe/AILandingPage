@@ -11,16 +11,24 @@ export * from './seed-engine';
 export * from './composer';
 export * from './template';
 export * from './llm-prompt-composer';
+export * from './composed-prompt';
 export * from './sections';
 
 /**
  * Prompt Engine
  *
- * Ensambla un prompt estructurado en 17 secciones canonicas a partir del
- * proyecto, el stack tecnologico, la Seed String, las tecnicas de diseno y
+ * Ensambla un prompt estructurado en hasta 17 secciones canonicas a partir
+ * del proyecto, el stack tecnologico, la Seed String, las tecnicas de diseno y
  * las restricciones negativas. El resultado es determinista: el mismo
- * proyecto produce siempre el mismo prompt, lo que hace posible versionarlo
- * y cachear la generacion.
+ * proyecto (y la misma Seed) produce siempre el mismo prompt, lo que hace
+ * posible versionarlo y cachear la generacion.
+ *
+ * Las tecnicas de diseno son lo UNICO opcional del prompt, y solo aparecen
+ * las que el usuario eligio: SEED STRING existe si y solo si esta elegida
+ * "Cadenas Semilla" (`seed-strings`), y SUBTRACTIVE DESIGN —el contenedor del
+ * texto del resto de tecnicas— solo si hay alguna elegida. Por eso el prompt
+ * puede tener menos de 17 secciones. Ningun otro texto fijo del borrador
+ * puede mencionar una tecnica que no se eligio.
  */
 
 const DEFAULT_SECTIONS: SectionSpec[] = [
@@ -37,6 +45,11 @@ export function buildLandingPrompt(input: PromptBuildInput): BuiltPrompt {
   const { project } = input;
   const technology = composeTechnologies(input.technologies);
   const techniques = getTechniques(input.designTechniques);
+  // La Seed es la tecnica "Cadenas Semilla": sin elegirla no hay seccion, ni
+  // referencias a ella en el resto del borrador (colores y criterios de calidad).
+  const randomSeedString = techniques.some((technique) => technique.id === 'seed-strings')
+    ? input.randomSeedString?.trim() || null
+    : null;
   const architecture = resolveArchitecture(project, input.define ?? project.define);
   const negativeConstraints = input.negativeConstraints.filter((item) => item.trim().length > 0);
   const discover = input.discover ?? project.discover;
@@ -118,7 +131,7 @@ export function buildLandingPrompt(input: PromptBuildInput): BuiltPrompt {
     'VISUAL_DIRECTION',
     [
       `- Estilo: ${project.visual.style}`,
-      `- Colores: ${project.visual.colors.length > 0 ? project.visual.colors.join(', ') : 'a decidir de forma coherente con la Seed String'}`,
+      `- Colores: ${project.visual.colors.length > 0 ? project.visual.colors.join(', ') : `a decidir de forma coherente con ${randomSeedString ? 'la Seed String' : 'el estilo y el publico'}`}`,
       `- Tipografia: ${project.visual.typography}`,
       `- Nivel de sofisticacion (1-5): ${project.visual.sophistication}`,
       ...(project.visual.references.length > 0
@@ -130,7 +143,7 @@ export function buildLandingPrompt(input: PromptBuildInput): BuiltPrompt {
     ].join('\n'),
   );
 
-  add('SEED_STRING', renderSeedBlock(input.randomSeedString));
+  if (randomSeedString) add('SEED_STRING', renderSeedBlock(randomSeedString));
 
   add(
     'INFORMATION_ARCHITECTURE',
@@ -236,7 +249,7 @@ export function buildLandingPrompt(input: PromptBuildInput): BuiltPrompt {
       '2. UX: navegacion evidente, CTA inconfundible, flujo de lectura sin saltos.',
       '3. Copy: concreto, sin cliches, con micro-copy donde hace falta, adaptado al publico.',
       '4. Codigo: HTML semantico y valido, CSS organizado por bloques, JavaScript sin errores.',
-      '5. Diseno: ningun elemento sin proposito, ningun patron generico, coherencia con la Seed String.',
+      `5. Diseno: ningun elemento sin proposito, ningun patron generico${randomSeedString ? ', coherencia con la Seed String' : ''}.`,
       '6. Restricciones: todas las restricciones negativas cumplidas.',
       '',
       'Si algun punto falla, corrigelo antes de entregar.',
@@ -272,7 +285,7 @@ export function buildLandingPrompt(input: PromptBuildInput): BuiltPrompt {
     sections: ordered,
     conflicts: technology.conflicts,
     technologyIds: technology.effective.map((tech) => tech.id),
-    seedStringValue: input.randomSeedString,
+    seedStringValue: randomSeedString,
     negativeConstraints,
     estimatedTokens: estimateTokens(content) + estimateTokens(DEFAULT_SYSTEM_INSTRUCTION),
     composedByLLM: false,

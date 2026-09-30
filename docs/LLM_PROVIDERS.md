@@ -313,7 +313,8 @@ determinista **sin avisar**, indistinguible de un éxito.
 respeta el enfriamiento con normalidad (frente a la acción anterior del usuario), pero la
 llamada que la **continúa**, en la misma operación, lo salta — aunque sigue contando para la
 ventana por hora, que protege la cuota total, no el ritmo entre pasos. Se aplica en
-`composePromptViaLLM` (siempre sigue a `generateRandomSeedString`), en el camino de
+`composePromptViaLLM` (cuando la Seed está elegida, sigue a `generateRandomSeedString`; sin
+ella es la llamada que inicia la acción y respeta el enfriamiento), en el camino de
 `generateLanding` que compone y genera en una sola llamada, y en `generateVariation` cuando
 la estrategia pide una Seed nueva.
 

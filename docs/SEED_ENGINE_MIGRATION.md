@@ -2,6 +2,14 @@
 
 **Estado: completo.** Código de aplicación, esquema de Supabase y scripts de verificación migrados. El `DROP` de `seed_strings`/`seed_category`/columnas de `projects` ya se aplicó contra la base real (`npm run db:setup`, ver "Qué quedaba pendiente" más abajo). Este documento se conserva como registro histórico de la migración.
 
+> **Actualización posterior (2026-09-30): la Seed ya no se genera "siempre".** Donde este
+> documento dice que `buildPromptForProject` *siempre* genera un string, léase: siempre que la
+> técnica «Cadenas Semilla» (`seed-strings`) esté elegida. La Seed es una técnica de diseño más y
+> el prompt lleva únicamente las que el usuario eligió, así que sin ella no hay string, ni
+> sección `SEED STRING`, ni la llamada al modelo que lo generaría. `PromptBuildInput.randomSeedString`
+> pasó a ser opcional (`string | null`) y `seedStringValue` queda a `null` en ese caso. Ver
+> [`PROMPT_ENGINE.md`](PROMPT_ENGINE.md#seed-string-engine). Lo demás de la migración no cambia.
+
 ---
 
 ## Qué se pidió

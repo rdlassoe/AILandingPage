@@ -2,8 +2,14 @@
 
 ## Qué produce
 
-Un prompt estructurado en **17 secciones canónicas**, a partir del proyecto, el stack, la
+Un prompt estructurado en **hasta 17 secciones canónicas**, a partir del proyecto, el stack, la
 Seed String, las técnicas de diseño activas y las restricciones negativas.
+
+**Las técnicas de diseño son lo único opcional, y el prompt lleva únicamente las que el usuario
+eligió** — también cuando lo reescribe un LLM (ver
+[Con el LLM](#con-el-llm-qué-se-garantiza-y-qué-no)). La Seed String es una de ellas («Cadenas
+Semilla»): sin elegirla no hay sección `SEED STRING`, no se genera ningún string y no se gasta la
+llamada al modelo que lo generaría. Por eso el prompt tiene entre 15 y 17 secciones.
 
 `buildLandingPrompt` sigue siendo una función pura y determinista — mismo proyecto, mismo
 texto — pero con un proveedor real ya no es el paso final: es el **borrador**. Dos llamadas
@@ -20,11 +26,13 @@ USER INPUT
     ↓
 PROJECT CONTEXT ──► DISCOVER ──► TECHNOLOGY CONTEXT (composer.ts, elegido por el usuario)
     ↓
-SSoT SEED ENGINE (LLM real, o PRNG en modo demo) ──► SEED STRING
+SSoT SEED ENGINE (LLM real, o PRNG en modo demo) ──► SEED STRING     (solo con «Cadenas Semilla»)
     ↓
-DESIGN TECHNIQUES ──► NEGATIVE CONSTRAINTS ──► BORRADOR determinista (buildLandingPrompt)
+DESIGN TECHNIQUES (solo las elegidas) ──► NEGATIVE CONSTRAINTS ──► BORRADOR determinista (buildLandingPrompt)
                                                         ↓
                                     Proveedor real: LLM PROMPT COMPOSER reescribe el borrador
+                                                        ↓
+                          reconcileComposedSections: restaura lo fijo, descarta lo que sobra
                                                         ↓
                                                   FINAL PROMPT
 ```
@@ -75,23 +83,30 @@ composición) es la que más a menudo fallaba en
 | 4 | `TARGET AUDIENCE` | Público concreto y su *insight*. |
 | 5 | `BUSINESS GOAL` | Objetivo de negocio y CTA principal. |
 | 6 | `VISUAL DIRECTION` | Estilo, paleta, tipografía, sofisticación, referencias y vetos. |
-| 7 | `SEED STRING` | La cadena y su traducción a decisiones de diseño. |
+| 7 | `SEED STRING` | La cadena y su traducción a decisiones de diseño. **Solo con «Cadenas Semilla» elegida.** |
 | 8 | `INFORMATION ARCHITECTURE` | Secciones exactas y en qué orden. |
 | 9 | `COPY REQUIREMENTS` | Tono, mensaje principal, características y beneficios. |
 | 10 | `TECHNOLOGY` | Bloque compuesto por el Prompt Composer. |
 | 11 | `FUNCTIONAL REQUIREMENTS` | Qué tiene que funcionar de verdad. |
 | 12 | `RESPONSIVE REQUIREMENTS` | Mobile-first, breakpoints, áreas táctiles. |
 | 13 | `ACCESSIBILITY` | WCAG 2.1 AA, contraste, teclado, foco, etiquetas, ARIA. |
-| 14 | `SUBTRACTIVE DESIGN` | Auditoría para eliminar lo que no aporta. |
+| 14 | `SUBTRACTIVE DESIGN` | Contenedor del texto de las técnicas elegidas (la auditoría del «Diseño sustractivo», si lo está). **Solo si hay alguna técnica elegida.** |
 | 15 | `NEGATIVE CONSTRAINTS` | Requisitos duros, no sugerencias. |
 | 16 | `QUALITY CRITERIA` | Lista de verificación antes de responder. |
 | 17 | `OUTPUT FORMAT` | Documento autocontenido, sin markdown, `<!DOCTYPE html>` … `</html>`. |
 
 Las secciones vacías se omiten. El Prompt Studio permite verlas una a una antes de ejecutar.
 
-**El prompt no siempre tiene 17 secciones.** `SUBTRACTIVE DESIGN` es el contenedor de *todas*
-las técnicas de diseño elegidas (ver [Dónde aparecen las técnicas](#dónde-aparecen-las-técnicas)),
-así que si no se elige ninguna esa sección no existe y el prompt tiene **16**.
+**El prompt no siempre tiene 17 secciones.** Dos dependen de las técnicas elegidas:
+
+- `SEED STRING` existe si y solo si está elegida «Cadenas Semilla».
+- `SUBTRACTIVE DESIGN` es el contenedor de *todas* las técnicas elegidas (ver
+  [Dónde aparecen las técnicas](#dónde-aparecen-las-técnicas)): existe si hay al menos una.
+
+Sin ninguna técnica el prompt tiene **15** secciones; con solo «Cadenas Semilla», 17 (las dos
+existen: la Seed y su texto de refuerzo); con solo otra técnica, 16. Ningún texto fijo del
+borrador menciona una técnica que no se eligió: sin la Seed, `VISUAL DIRECTION` y
+`QUALITY CRITERIA` tampoco se refieren a ella.
 
 ---
 
@@ -121,6 +136,12 @@ Resultado: seleccionar `HTML + CSS + JS` produce un prompt distinto que
 > catálogo de Seeds ni una traducción a directrices con un esquema fijo (`SeedDirectives`).
 > La Seed **es únicamente un string aleatorio**, generado de nuevo en cada ejecución. Detalle
 > completo de la migración en [`SEED_ENGINE_MIGRATION.md`](SEED_ENGINE_MIGRATION.md).
+
+> **Todo lo de esta sección solo ocurre si «Cadenas Semilla» está elegida.** La Seed *es* esa
+> técnica: sin ella no se genera ningún string (ni la llamada al LLM, ni el PRNG del modo demo),
+> no hay sección `SEED STRING` y `seedStringValue` queda a `null`. `buildPromptForProject`
+> decide si generarlo y `buildLandingPrompt` decide si escribirlo: aunque alguien le pase un
+> string sin la técnica elegida, no lo usa.
 
 La sección `SEED STRING` del prompt existe para anclar el contexto semántico y evitar que
 todas las páginas converjan hacia la misma estructura visual — pero ya no lo hace con una
@@ -179,67 +200,55 @@ Las técnicas no tienen sección propia: `buildLandingPrompt` las escribe todas 
 `SUBTRACTIVE DESIGN` (`getTechniques` filtra el catálogo por las elegidas). Primero va el
 "Diseño sustractivo", si está elegido; las demás, bajo `### Otras tecnicas activas`. De ahí:
 
-- **Ninguna elegida:** la sección queda vacía y se omite. El prompt tiene 16 secciones.
+- **Ninguna elegida:** la sección queda vacía y se omite. Sin la Seed tampoco, el prompt tiene
+  15 secciones.
 - **Elegidas, pero no el "Diseño sustractivo":** la sección aparece igualmente con el título
   `SUBTRACTIVE DESIGN`, aunque solo contenga otras técnicas. Es un título engañoso, no un fallo
   de contenido.
-- **Secciones que no dependen de las técnicas:** `SEED STRING` y `NEGATIVE CONSTRAINTS` existen
-  siempre. Desmarcar "Cadenas Semilla" o "Restricciones negativas reforzadas" solo quita el
-  texto de refuerzo de `SUBTRACTIVE DESIGN`; la Seed se genera y se escribe en cualquier caso.
+- **Una técnica tiene además sección propia:** «Cadenas Semilla» es la Seed. Elegirla añade el
+  texto de refuerzo a `SUBTRACTIVE DESIGN` **y** la sección `SEED STRING` (más la llamada que
+  genera el string); desmarcarla quita las dos cosas.
+- **`NEGATIVE CONSTRAINTS` existe siempre:** son las restricciones del proyecto, no una técnica.
+  Desmarcar "Restricciones negativas reforzadas" solo quita el texto de refuerzo de
+  `SUBTRACTIVE DESIGN`.
 
-**Comprobado (2026-09-30)** ejecutando `buildLandingPrompt` con el proyecto de ejemplo de
-`.data/db.json` y seis selecciones —ninguna, solo `ambitious-prompts`, solo
-`subtractive-design`, solo `seed-strings`, las cuatro por defecto y las ocho—: en todos los
-casos el texto de una técnica aparece **si y solo si** se eligió. Es el borrador determinista;
-con el LLM las garantías son menores, ver abajo.
+**Comprobado** (`npm run verify:prompt`): para las **256 combinaciones** posibles de las 8
+técnicas, el texto de cada técnica aparece en el borrador determinista **si y solo si** se eligió,
+y lo mismo la sección `SEED STRING`. Sin la Seed, el borrador no contiene la palabra «Seed» en
+ningún sitio.
 
 ### Con el LLM: qué se garantiza y qué no
 
-> **Problema conocido, sin corregir.** Lo de abajo se comprobó sustituyendo la respuesta del
-> modelo por textos simulados (no hay claves en este entorno): prueba lo que el código
-> *comprueba*, no lo que haría un modelo concreto. No se ha probado con un modelo real.
+El borrador lo reescribe un LLM, y un LLM no siempre obedece. Por eso la garantía no descansa en
+la petición sino en lo que el código **impone sobre la respuesta**
+(`reconcileComposedSections`, [`composed-prompt.ts`](../src/services/prompt-engine/composed-prompt.ts)):
 
-| Garantía | Estado |
+| Garantía | Cómo se impone |
 | --- | --- |
-| El borrador que recibe el LLM solo trae las técnicas elegidas | **Sí** (verificado arriba). |
-| Con ninguna técnica, el prompt final no tiene el bloque `SUBTRACTIVE DESIGN` | **No está garantizado.** |
-| Las técnicas elegidas llegan al prompt final | **No se comprueba.** |
-| El LLM no añade técnicas que no se eligieron | **No se comprueba.** |
+| Solo hay las secciones del borrador | Una sección que el borrador no traía (un `SUBTRACTIVE DESIGN` o un `SEED STRING` inventados) se **descarta**. |
+| El texto de las técnicas elegidas llega intacto | `SUBTRACTIVE DESIGN` se **restaura del borrador** tal cual, igual que `TECHNOLOGY` y `NEGATIVE CONSTRAINTS` (`VERBATIM_SECTIONS`): lo que escriba el modelo ahí se ignora. Si la omite, tampoco falla: se restaura. |
+| Ninguna técnica no elegida se cuela en otra sección | Si el texto de una técnica no elegida aparece en una sección que redactó el modelo, la respuesta se **rechaza** y se cae al borrador determinista (`composedByLLM: false`, con el aviso del Prompt Studio). |
+| El modelo sabe qué se le pide | La petición enumera las secciones reales del borrador (número y títulos) y el sistema le dice si hay técnicas y Seed o no. Antes decía siempre «escribe las 17 secciones», lo que invitaba a inventar el bloque de técnicas. |
 
-Por qué:
+Qué **no** cubre:
 
-1. **La petición contradice al borrador.** `buildComposerUserPrompt` termina con «Escribe las
-   `${SECTION_ORDER.length}` secciones completas» —siempre 17— aunque el borrador traiga 16.
-   Con ninguna técnica elegida, la regla 1 del sistema («mismos títulos que recibas, no
-   inventes secciones») choca con esa línea, y un modelo que dé prioridad a la segunda puede
-   escribir `SUBTRACTIVE DESIGN` por su cuenta. Qué hace cada modelo no se ha medido.
-2. **Las secciones sobrantes se aceptan.** `assertHasRequiredSections` solo exige que estén
-   las secciones que traía el borrador. `parseComposedSections` reconoce cualquiera de los 17
-   títulos, así que una sección que el borrador no tenía entra en el prompt final. Simulado:
-   respuesta con un `## SUBTRACTIVE DESIGN` inventado y ninguna técnica elegida → el bloque
-   aparece en el resultado.
-3. **El contenido de las técnicas no se valida.** `VERBATIM_SECTIONS` es solo `TECHNOLOGY` y
-   `NEGATIVE CONSTRAINTS`; `SUBTRACTIVE DESIGN` la reescribe el modelo con libertad. Simulado:
-   respuesta que deja el bloque sin el texto de la técnica elegida → se acepta; respuesta que
-   añade el texto de una técnica no elegida → se acepta.
+- **La detección de una técnica colada es literal.** Busca frases largas de cada técnica
+  (`TECHNIQUE_FINGERPRINTS`): una paráfrasis no se detecta. Una frase que ya estuviera en el
+  borrador —porque la escribió el usuario en su brief— no cuenta como colada.
+- **No se comprueba el contenido del resto de secciones.** Un modelo puede aplicar una idea
+  parecida a una técnica sin copiar su texto, p. ej. en `QUALITY CRITERIA`; y el borrador base ya
+  trae criterios generales («ningún elemento sin propósito») que no son una técnica.
+- **Las fases posteriores no vuelven a aplicar técnicas.** El refinamiento y las variantes solo
+  repiten siete secciones del encargo y ninguna técnica. La variante «nueva Seed» genera una Seed
+  aunque el encargo original no la llevara: es justo lo que el usuario pide al elegirla.
+- **Se comprobó con respuestas simuladas, no con un modelo real** (no hay claves en este
+  entorno): prueba lo que el código garantiza frente a un modelo que no obedece, no qué hace
+  cada modelo.
 
-**Mientras no se corrija:** el prompt compuesto se guarda y se muestra entero antes de gastar
-la llamada de generación (decisión 10 de [`ARCHITECTURE.md`](ARCHITECTURE.md)), así que basta
-con revisar la sección `SUBTRACTIVE DESIGN` en el Prompt Studio —o comprobar que no existe si no
-elegiste ninguna técnica— antes de pulsar "Generar HTML". Ninguna insignia avisa de esto hoy.
-
-**Corrección propuesta (no aplicada)**, de menor a mayor alcance:
-
-- Que la petición diga el número real de secciones del borrador (`draft.sections.length`) y
-  enumere sus títulos.
-- Descartar tras el análisis cualquier sección que el borrador no trajera.
-- Tratar el bloque de técnicas como `TECHNOLOGY` y `NEGATIVE CONSTRAINTS`: copiarlo tal cual
-  del borrador después de la respuesta del modelo, porque son instrucciones para el generador de
-  la página y no material creativo. Si se prefiere que el modelo lo reescriba, como mínimo
-  comprobar que el texto de cada técnica elegida sigue presente.
-
-No hay un script permanente que cubra esto; al corregirlo conviene añadir uno a
-`scripts/verify-*.mjs` (las pruebas de esta sección fueron temporales).
+`npm run verify:prompt` ejecuta los módulos reales con `runLLM` sustituido por respuestas
+simuladas —un modelo que inventa secciones, reescribe u omite el bloque de técnicas, o cuela una
+técnica no elegida— y lo comprueba sin servidor ni claves. `verify:flow` cubre además el cableado
+de `POST /api/prompts/compose` con técnicas elegidas.
 
 ---
 

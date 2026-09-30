@@ -365,7 +365,8 @@ export function PromptStudio({
             <Wand2 className="size-6 text-faint" aria-hidden="true" />
             <p className="font-medium text-ink">Necesitas un proyecto para componer un prompt</p>
             <p className="max-w-md text-sm text-muted">
-              El Prompt Engine parte del brief: publico, objetivo, stack y restricciones. La Seed String se genera sola.
+              El Prompt Engine parte del brief: publico, objetivo, stack y restricciones, y aplica solo las
+              tecnicas de diseno que elijas.
             </p>
             <Link
               href="/projects/new"
@@ -468,8 +469,10 @@ export function PromptStudio({
         <Alert tone="warn" title="El prompt no lo compuso el LLM">
           {provider?.label ?? 'El proveedor'} no pudo reescribir el prompt (limite de cuota, fallo
           transitorio o formato invalido) y se uso el borrador determinista como red de seguridad.
-          Este prompt es valido, pero no tiene la Seed aplicada por el modelo. Pulsa &quot;Generar
-          prompt&quot; de nuevo para reintentarlo con el LLM real.
+          Este prompt es valido
+          {built?.seedStringValue ? ', pero no tiene la Seed aplicada por el modelo' : ''}. Pulsa
+          &quot;Generar prompt&quot; de nuevo para reintentarlo con el LLM real. Solo incluye las
+          tecnicas que elegiste.
         </Alert>
       ) : null}
 

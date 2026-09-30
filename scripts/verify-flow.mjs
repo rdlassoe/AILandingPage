@@ -126,6 +126,41 @@ const run = async () => {
   log(built?.content?.includes('## SUBTRACTIVE DESIGN') === true, 'Seccion SUBTRACTIVE DESIGN presente');
   log(built?.content?.includes('Lucide') === true, 'Instrucciones de la tecnologia Lucide compuestas');
 
+  // 3b. El prompt lleva UNICAMENTE las tecnicas elegidas (POST /api/prompts/compose,
+  // el camino real del Prompt Studio). Usa el proveedor del recorrido: con `mock` es
+  // el borrador determinista, con uno real pasa ademas por la reescritura del LLM.
+  // Un `[]` explicito significa "ninguna tecnica", no "las de por defecto".
+  const composeWith = (designTechniques) =>
+    call('POST', '/api/prompts/compose', { projectId, ...llm, designTechniques });
+  const none = await composeWith([]);
+  const noneBuilt = none.data?.built;
+  log(
+    none.status === 200 &&
+      !noneBuilt?.content?.includes('## SUBTRACTIVE DESIGN') &&
+      !noneBuilt?.content?.includes('## SEED STRING') &&
+      noneBuilt?.seedStringValue === null,
+    'Sin tecnicas elegidas: el prompt no trae SUBTRACTIVE DESIGN ni SEED STRING',
+    `status=${none.status} secciones=${noneBuilt?.sections?.length}`,
+  );
+  log(
+    built?.sections?.length !== undefined && noneBuilt?.sections?.length === built.sections.length - 2,
+    'Sin tecnicas elegidas: el prompt tiene exactamente las 2 secciones menos',
+    `${built?.sections?.length} -> ${noneBuilt?.sections?.length}`,
+  );
+  await pause();
+  // 'inventada' no esta en el catalogo: se ignora, no rompe ni cuenta como elegida.
+  const one = await composeWith(['ambitious-prompts', 'inventada']);
+  const oneBuilt = one.data?.built;
+  log(
+    one.status === 200 &&
+      oneBuilt?.content?.includes('## SUBTRACTIVE DESIGN') === true &&
+      oneBuilt?.content?.includes('sesgos cognitivos') === true &&
+      !oneBuilt?.content?.includes('maximo 6 secciones') &&
+      !oneBuilt?.content?.includes('## SEED STRING'),
+    'Solo "Prompts Ambiciosos": aparece su texto y ninguno de las demas tecnicas',
+    `status=${one.status}`,
+  );
+
   // 4. Generar
   await pause();
   const generated = await call('POST', '/api/generations', { projectId, ...llm });

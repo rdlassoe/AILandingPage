@@ -26,8 +26,13 @@ export interface PromptBuildInput {
    * escribe a mano — y viaja tal cual a la seccion SEED STRING: es el propio
    * modelo (o, en modo demo, el hash deterministico de `brief-parser.ts`)
    * quien lo manipula para derivar una direccion creativa.
+   *
+   * Solo se usa si `designTechniques` incluye `seed-strings`: la Seed ES esa
+   * tecnica, asi que sin elegirla no hay seccion SEED STRING aunque se pase
+   * un string. Por eso puede omitirse (y conviene no generarlo, ahorra una
+   * llamada al modelo).
    */
-  randomSeedString: string;
+  randomSeedString?: string | null;
   negativeConstraints: string[];
   /** Tecnicas de diseno activadas por el usuario. */
   designTechniques: DesignTechniqueId[];

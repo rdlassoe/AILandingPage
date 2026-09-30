@@ -14,6 +14,7 @@
     "seed:sql": "node --experimental-strip-types --no-warnings scripts/generate-seed-sql.mjs",
     "verify:flow": "node scripts/verify-flow.mjs",
     "verify:inspector": "node --experimental-strip-types --no-warnings scripts/verify-inspector.mjs",
+    "verify:prompt": "node --experimental-strip-types --no-warnings scripts/verify-prompt-techniques.mjs",
     "verify:supabase": "node --env-file-if-exists=.env.local scripts/verify-supabase.mjs"
   },
   "dependencies": {

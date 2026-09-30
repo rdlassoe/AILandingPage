@@ -38,8 +38,8 @@ Groq ni Ollama.
 | **Project Builder** | Asistente de 5 pasos: qué, para quién, con qué stack, con qué estilo, qué evitar. |
 | **Discover / Define** | Análisis del encargo (nicho, público, fricciones) y derivación de la arquitectura de información. |
 | **Technology Manager** | Las tecnologías son datos: cada una aporta instrucciones, restricciones y requisitos de salida al prompt. |
-| **Seed String Engine** | Genera un string aleatorio en cada ejecución (técnica *String Seed of Thought*); no hay catálogo, lo manipula el propio modelo para derivar una dirección creativa. |
-| **Prompt Engine** | Ensambla un prompt de 17 secciones canónicas de forma determinista. |
+| **Seed String Engine** | Si la técnica «Cadenas Semilla» está elegida, genera un string aleatorio en cada ejecución (técnica *String Seed of Thought*); no hay catálogo, lo manipula el propio modelo para derivar una dirección creativa. |
+| **Prompt Engine** | Ensambla un prompt de hasta 17 secciones canónicas de forma determinista, con únicamente las técnicas de diseño elegidas (también cuando lo reescribe un LLM). |
 | **Prompt Composer** | Combina varias tecnologías, detecta conflictos y resuelve prioridades. |
 | **LLM Orchestrator** | Punto único de contacto con los modelos: proveedor, modelo, timeout, reintento único, límite de uso. |
 | **Output Validator** | Normaliza y valida la respuesta antes de mostrarla. No se confía en el modelo. |
@@ -272,6 +272,7 @@ npm run verify:supabase # validar esquema, RLS y mappers (transacción + rollbac
 npm run seed:sql    # regenerar supabase/seed.sql desde el catálogo
 npm run verify:flow # recorrido de aceptación de punta a punta (con el server arrancado)
 npm run verify:inspector # instrumentación del inspector y mensajes del iframe (sin servidor)
+npm run verify:prompt # el prompt lleva solo las técnicas elegidas, con y sin LLM (sin servidor ni claves)
 ```
 
 ---
@@ -397,7 +398,7 @@ plantilla `[YOUR-PASSWORD]` y que los caracteres especiales estén codificados p
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Capas, flujo de datos y decisiones arquitectónicas. |
 | [`docs/DATABASE.md`](docs/DATABASE.md) | Modelo de datos, relaciones y RLS. |
 | [`docs/LLM_PROVIDERS.md`](docs/LLM_PROVIDERS.md) | Capa de proveedores y cómo añadir uno nuevo. |
-| [`docs/PROMPT_ENGINE.md`](docs/PROMPT_ENGINE.md) | Las 17 secciones, el motor de Seed String y técnicas de diseño. |
+| [`docs/PROMPT_ENGINE.md`](docs/PROMPT_ENGINE.md) | Las secciones (hasta 17), el motor de Seed String y técnicas de diseño. |
 | [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) | Convenciones, fases de construcción y checklist de QA. |
 | [`docs/SEED_ENGINE_MIGRATION.md`](docs/SEED_ENGINE_MIGRATION.md) | Estado de la migración del catálogo de Seeds al string aleatorio. |
 | [`docs/ENVIRONMENT.md`](docs/ENVIRONMENT.md) | Todas las variables de entorno. |

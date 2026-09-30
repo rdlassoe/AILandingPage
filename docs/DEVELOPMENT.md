@@ -18,6 +18,7 @@ npm run db:check     # diagnostica el estado de la base, sin escribir
 npm run seed:sql     # regenera supabase/seed.sql desde el catálogo
 npm run verify:flow  # recorrido de aceptación contra el servidor de desarrollo
 npm run verify:inspector  # instrumentación del inspector y mensajes del iframe (sin servidor)
+npm run verify:prompt     # el prompt lleva solo las técnicas elegidas, con y sin LLM (sin servidor ni claves)
 npm run verify:supabase  # esquema, RLS y mappers contra la base real
 ```
 
@@ -157,16 +158,25 @@ Prompt Composer inyecta.
 
 ### La Seed String
 
-Ya no se crea desde la interfaz: no hay catálogo. Cada ejecución genera un string aleatorio
-nuevo (técnica *String Seed of Thought*) en [`seed-engine.ts`](../src/services/prompt-engine/seed-engine.ts),
-y es el propio modelo que compone el prompt quien lo manipula para derivar una dirección
-creativa. Detalle completo en [`SEED_ENGINE_MIGRATION.md`](SEED_ENGINE_MIGRATION.md).
+Ya no se crea desde la interfaz: no hay catálogo. Si «Cadenas Semilla» está elegida, cada
+ejecución genera un string aleatorio nuevo (técnica *String Seed of Thought*) en
+[`seed-engine.ts`](../src/services/prompt-engine/seed-engine.ts), y es el propio modelo que
+compone el prompt quien lo manipula para derivar una dirección creativa. Sin esa técnica no hay
+string ni sección `SEED STRING`. Detalle completo en
+[`SEED_ENGINE_MIGRATION.md`](SEED_ENGINE_MIGRATION.md).
 
 ### Una técnica de diseño
 
 Añade una entrada a `DESIGN_TECHNIQUES` en
 `src/services/prompt-engine/design-techniques.ts` y su id a `DesignTechniqueId`. Aparece
 sola en el Prompt Studio.
+
+Añade también sus frases distintivas a `TECHNIQUE_FINGERPRINTS`
+(`src/services/prompt-engine/composed-prompt.ts`): es un `Record` exhaustivo, así que TypeScript
+no compila hasta que lo hagas. Es lo que permite detectar que un LLM coló el texto de la técnica
+cuando el usuario **no** la eligió. Elige frases largas y propias de la técnica (una corta
+podría salir de una redacción legítima) y no menciones la Seed en su texto: una técnica no puede
+referirse a otra que quizá no esté elegida. Después ejecuta `npm run verify:prompt`.
 
 ### Un proveedor LLM
 
@@ -306,6 +316,31 @@ páginas grandes, audita con Gemini.
 Tamaños de página obtenidos: 6 529 caracteres con `gemini-3.1-flash-lite`, 40 067 con un
 Flash completo, 14 642 con `openai/gpt-oss-120b`.
 
+### Solo las técnicas elegidas
+
+```bash
+npm run verify:prompt      # no necesita servidor ni claves
+```
+
+Ejecuta los módulos reales de `src/services/prompt-engine/` con Node (el hook
+`scripts/lib/ts-resolve-hook.mjs` resuelve el alias `@/`, las extensiones `.ts` y `server-only`)
+y sustituye `runLLM` por respuestas simuladas —nunca llama a un modelo—. Comprueba:
+
+1. **Borrador determinista**, en las 256 combinaciones de las 8 técnicas: el texto de una técnica
+   y la sección `SEED STRING` aparecen si y solo si se eligieron; sin la Seed no queda ninguna
+   mención a ella.
+2. **Composición con LLM**, frente a modelos que no obedecen: que inventan `SUBTRACTIVE DESIGN` o
+   `SEED STRING`, reescriben u omiten el bloque de técnicas, o cuelan una técnica no elegida en
+   otra sección. Y que uno que obedece no dispara falsos positivos.
+3. **La petición al modelo** describe el borrador real (número y títulos de secciones) y no habla
+   de «17 secciones».
+
+Prueba lo que el código garantiza, no lo que haría un modelo concreto. `verify:flow` añade el
+recorrido por la API real (`POST /api/prompts/compose` con `[]` y con una técnica suelta).
+
+Para ejecutar más módulos de `src/` de esta forma basta importarlos desde un script que registre
+el hook; ojo con `@/services/llm-orchestrator`, que el hook sustituye siempre por el stub.
+
 ### Editor de código e inspector
 
 ```bash
@@ -419,13 +454,12 @@ Aplicada tanto a la aplicación como a lo que genera:
 - **Los modelos se saturan.** Un `503` en el modelo recién salido es habitual; uno más
   antiguo suele responder. No es un fallo de la aplicación y conviene no diagnosticarlo como
   tal: la tabla `generations` guarda el estado y el mensaje del proveedor.
-- **Las técnicas de diseño no están garantizadas en la composición con LLM.** El borrador
-  determinista solo contiene las elegidas (comprobado), pero `composePromptViaLLM` pide
-  siempre «17 secciones» aunque el borrador traiga 16, acepta secciones que el borrador no
-  tenía y no valida que las técnicas elegidas sobrevivan a la reescritura. Con ninguna técnica
-  elegida, el modelo puede inventar el bloque `SUBTRACTIVE DESIGN`. Detalle, evidencia
-  (con respuestas simuladas, sin modelo real) y corrección propuesta en
-  [`PROMPT_ENGINE.md`](PROMPT_ENGINE.md#con-el-llm-qué-se-garantiza-y-qué-no). Sin corregir.
+- **Las técnicas de diseño se imponen sobre la respuesta del LLM, pero solo de forma literal.**
+  El prompt lleva únicamente las elegidas: el bloque de técnicas se restaura del borrador, las
+  secciones inventadas se descartan y el texto de una técnica no elegida colado en otra sección
+  se rechaza. La detección es por frases, no semántica: una paráfrasis no se detecta. Y se
+  comprobó con respuestas simuladas, no con un modelo real. Detalle en
+  [`PROMPT_ENGINE.md`](PROMPT_ENGINE.md#con-el-llm-qué-se-garantiza-y-qué-no).
 - **Editor de código e inspector** (decisión 11):
   - No localiza la **regla CSS** que afecta a un elemento, solo su etiqueta. Un estilo
     incorrecto suele vivir en un `<style>`, no en la etiqueta: hoy hay que buscarlo en el editor

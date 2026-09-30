@@ -13,6 +13,7 @@ import {
   DEFAULT_TECHNIQUE_IDS,
   generateRandomSeedForMock,
   generateRandomSeedString,
+  getTechniques,
   renderSeedBlock,
 } from '@/services/prompt-engine';
 import {
@@ -58,10 +59,16 @@ export interface GenerationContext {
 /**
  * Paso 1-6: compone el prompt canonico del proyecto.
  *
- * La Seed ya no es una eleccion del proyecto: es un string aleatorio nuevo
- * en CADA ejecucion (tecnica String Seed of Thought). Con un proveedor real
- * lo genera un LLM (`generateRandomSeedString`); en modo demo, o si el
- * proveedor pedido no esta configurado y acabara degradando a demo,
+ * El prompt lleva UNICAMENTE las tecnicas de diseno elegidas
+ * (`options.designTechniques`; sin ellas, las de `defaultEnabled`). La Seed es
+ * una de ellas ("Cadenas Semilla"): si no esta elegida no se genera ningun
+ * string —ni se gasta la llamada al modelo— y el prompt no tiene seccion SEED
+ * STRING.
+ *
+ * Cuando esta elegida, la Seed no es una eleccion del proyecto: es un string
+ * aleatorio nuevo en CADA ejecucion (tecnica String Seed of Thought). Con un
+ * proveedor real lo genera un LLM (`generateRandomSeedString`); en modo demo,
+ * o si el proveedor pedido no esta configurado y acabara degradando a demo,
  * `generateRandomSeedForMock` hace lo mismo con `crypto.randomBytes`, sin
  * LLM.
  *
@@ -69,11 +76,13 @@ export interface GenerationContext {
  * `buildLandingPrompt`: una funcion de codigo, determinista y gratuita (la
  * Seed es lo unico que varia entre ejecuciones). Con un proveedor real,
  * `composePromptViaLLM` ademas reescribe ese borrador entero como el prompt
- * final de 17 secciones, manipulando el string aleatorio para derivar la
- * direccion creativa.
+ * final, manipulando el string aleatorio (si lo hay) para derivar la
+ * direccion creativa, y `reconcileComposedSections` impone sobre esa
+ * respuesta que no aparezca ninguna tecnica que no se eligio.
  *
  * Si la composicion falla o el modelo no respeta el formato, se cae al
- * borrador determinista: nunca se deja al usuario sin prompt.
+ * borrador determinista: nunca se deja al usuario sin prompt, y ese borrador
+ * tambien contiene solo las tecnicas elegidas.
  */
 export async function buildPromptForProject(
   ctx: GenerationContext,
@@ -90,16 +99,25 @@ export async function buildPromptForProject(
   const { provider } = resolveProvider(options.providerId);
   const usesRealLLM = provider.id !== 'mock';
 
-  const seed = usesRealLLM
-    ? await generateRandomSeedWithTracking(ctx, project, options)
-    : generateRandomSeedForMock();
+  // `designTechniques` llega del cliente como cadenas libres: `getTechniques`
+  // se queda solo con las del catalogo, sin duplicados. Un `[]` explicito
+  // significa "ninguna tecnica"; solo `undefined` cae a las por defecto.
+  const techniqueIds = getTechniques(options.designTechniques ?? DEFAULT_TECHNIQUE_IDS).map((technique) => technique.id);
+
+  // La Seed ES la tecnica "Cadenas Semilla": sin elegirla no hay string, y
+  // tampoco se gasta la llamada al modelo que lo generaria.
+  const seed = !techniqueIds.includes('seed-strings')
+    ? null
+    : usesRealLLM
+      ? await generateRandomSeedWithTracking(ctx, project, options)
+      : generateRandomSeedForMock();
 
   const draft = buildLandingPrompt({
     project,
     technologies,
-    randomSeedString: seed.randomString,
+    randomSeedString: seed?.randomString ?? null,
     negativeConstraints: project.negativeConstraints,
-    designTechniques: options.designTechniques ?? DEFAULT_TECHNIQUE_IDS,
+    designTechniques: techniqueIds,
     discover: project.discover,
     define: project.define,
   });
@@ -131,6 +149,7 @@ export async function buildPromptForProject(
     const composed = await composePromptViaLLM(
       { ownerId: ctx.ownerId, providerId: options.providerId, model: options.model },
       draft,
+      { techniqueIds },
     );
     await ctx.store.updateGeneration(ctx.ownerId, generation.id, {
       status: 'success',

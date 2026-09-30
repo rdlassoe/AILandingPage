@@ -47,16 +47,18 @@ POST /api/prompts/compose ──► Zod valida la entrada
         ▼
 composeAndPersistPrompt (landing-generator)
   1. carga el proyecto y comprueba que es generable
-  2. prompt-engine compone las 17 secciones (borrador determinista)
+  2. prompt-engine compone las secciones, hasta 17 (borrador determinista)
        · composer resuelve el stack y sus conflictos
-       · SSoT Seed Engine genera el string aleatorio de la Seed
-       · design-techniques inyecta las técnicas activas
-  3. con proveedor real: dos llamadas LLM más reescriben el borrador
-     entero (Seed + composición) — ver decisión 9
+       · SSoT Seed Engine genera el string aleatorio de la Seed, solo si
+         «Cadenas Semilla» está elegida
+       · design-techniques inyecta únicamente las técnicas elegidas
+  3. con proveedor real: hasta dos llamadas LLM más reescriben el borrador
+     (Seed + composición) y el código impone sobre la respuesta que solo
+     aparezcan las técnicas elegidas — ver decisión 9
   4. guarda prompt + prompt_version  ◄── trazabilidad
         │
         ▼
-El usuario revisa el prompt ya compuesto (17 secciones) en pantalla
+El usuario revisa el prompt ya compuesto (15-17 secciones según las técnicas) en pantalla
         │
         ▼
 Usuario pulsa "Generar HTML"
@@ -233,25 +235,27 @@ que el HTML vigente ya no es exactamente el que produjo ese prompt.
 
 **Decisión (revisada).** `buildLandingPrompt` sigue existiendo como función pura —mismo
 proyecto, mismo borrador— pero con un proveedor real ya no es lo último que ocurre. Es el
-**borrador**: `buildPromptForProject` (`landing-generator`) lo pasa por dos llamadas más al
-LLM antes de guardarlo como versión definitiva:
+**borrador**: `buildPromptForProject` (`landing-generator`) lo pasa por hasta dos llamadas
+más al LLM antes de guardarlo como versión definitiva:
 
 1. **`generateRandomSeedString`** genera el string aleatorio de la Seed con la técnica *String
    Seed of Thought* (Misaki & Akiba, ICLR 2026) — solo eso, sin traducirlo a nada todavía.
-   Se ejecuta **siempre**: la Seed ya no es una elección del proyecto ni existe un catálogo
-   que consultar (ver [`SEED_ENGINE_MIGRATION.md`](SEED_ENGINE_MIGRATION.md)), así que no hay
-   ninguna condición que la salte.
-2. **`composePromptViaLLM`** reescribe el borrador (17 secciones, o 16 si no se eligió ninguna
-   técnica de diseño). El stack tecnológico (lo
-   elige el usuario, no el LLM) y las restricciones negativas viajan como bloques que el
-   modelo debe copiar tal cual. La sección `SEED STRING` es distinta a propósito: en el
+   Se ejecuta **solo si «Cadenas Semilla» está elegida**: la Seed ya no es una elección del
+   proyecto ni existe un catálogo que consultar (ver
+   [`SEED_ENGINE_MIGRATION.md`](SEED_ENGINE_MIGRATION.md)), pero sigue siendo una técnica de
+   diseño más, y el prompt lleva únicamente las que se eligieron. Sin ella no hay string, ni
+   sección `SEED STRING`, ni esta llamada.
+2. **`composePromptViaLLM`** reescribe el borrador (entre 15 y 17 secciones según las técnicas
+   elegidas). El stack tecnológico (lo elige el usuario, no el LLM), las restricciones negativas
+   y el bloque de técnicas de diseño (`SUBTRACTIVE DESIGN`) viajan como bloques que el modelo
+   debe copiar tal cual. Si hay Seed, la sección `SEED STRING` es distinta a propósito: en el
    borrador solo trae el string en crudo, y es este mismo modelo quien debe **manipularlo**
    (suma + módulo, hash…) para derivar la dirección creativa y escribirla ahí — exactamente
    la mitad de la técnica que el paso anterior no hizo. El resto —contexto, objetivo,
    dirección visual, copy…— lo redacta libremente.
 
 El **modo demo sigue siendo 100 % determinista**: usa el borrador de `buildLandingPrompt`
-sin pasar por la segunda llamada, y el string de la Seed lo deriva un PRNG real
+sin pasar por la segunda llamada, y el string de la Seed (si está elegida) lo deriva un PRNG real
 (`generateRandomSeedForMock`, `crypto.randomBytes`), no un LLM. Como no hay razonamiento que
 lo manipule, `brief-parser.ts` (Mock) hashea el string en código para elegir una familia de
 estilo interna. `resolveProvider` decide esto mismo que decidirá el orquestador al ejecutar
@@ -265,14 +269,20 @@ ejecutando la función dos veces, sino de que cada prompt —lo redacte quien lo
 guardado de forma inmutable en `prompt_versions`. Eso no cambia.
 
 **Coste.** Una generación con proveedor real pasa de 1 llamada a 3 (Seed + composición +
-landing), del mismo orden que ya suponía activar DISCOVER. Si el modelo omite alguna de las
-secciones que traía el borrador, se cae al borrador determinista en vez de fallar: nunca se deja
-al usuario sin prompt.
+landing), del mismo orden que ya suponía activar DISCOVER; sin «Cadenas Semilla» son 2. Si el
+modelo omite alguna de las secciones que debía redactar él, se cae al borrador determinista en
+vez de fallar: nunca se deja al usuario sin prompt.
 
-**Límite conocido.** Esa comprobación es solo de *presencia*: no detecta secciones de más ni
-valida el contenido de las técnicas de diseño. Con ninguna técnica elegida, la petición al
-modelo sigue pidiendo 17 secciones aunque el borrador traiga 16, y un bloque `SUBTRACTIVE
-DESIGN` inventado se acepta. Detalle, evidencia y corrección propuesta en
+**Garantía: solo las técnicas elegidas, obedezca o no el modelo.** La petición al modelo no basta
+—antes decía siempre «escribe las 17 secciones» y un modelo podía inventar el bloque de
+técnicas—, así que el código lo impone sobre la respuesta (`reconcileComposedSections`,
+`composed-prompt.ts`): descarta las secciones que el borrador no traía, restaura del borrador las
+secciones fijas (`TECHNOLOGY`, `SUBTRACTIVE DESIGN`, `NEGATIVE CONSTRAINTS`) y rechaza —cayendo al
+borrador— una respuesta que reproduzca el texto de una técnica no elegida en otra sección. El
+borrador determinista también lleva solo las elegidas. Es una decisión deliberada que el texto
+de las técnicas sea **verbatim**: son instrucciones para el generador de la página, no material
+creativo, y dejar que el modelo las reescriba permitía perderlas o deformarlas sin que nada lo
+detectara. Límites (la detección es literal, no semántica) y cómo se verifica, en
 [`PROMPT_ENGINE.md`](PROMPT_ENGINE.md#con-el-llm-qué-se-garantiza-y-qué-no).
 
 **Restricción heredada.** El refinamiento y las variantes **no** vuelven a llamar a
