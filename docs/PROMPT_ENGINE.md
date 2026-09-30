@@ -89,6 +89,10 @@ composición) es la que más a menudo fallaba en
 
 Las secciones vacías se omiten. El Prompt Studio permite verlas una a una antes de ejecutar.
 
+**El prompt no siempre tiene 17 secciones.** `SUBTRACTIVE DESIGN` es el contenedor de *todas*
+las técnicas de diseño elegidas (ver [Dónde aparecen las técnicas](#dónde-aparecen-las-técnicas)),
+así que si no se elige ninguna esa sección no existe y el prompt tiene **16**.
+
 ---
 
 ## Prompt Composer: combinación de tecnologías
@@ -168,6 +172,74 @@ Las 8 de *"Tratado Práctico: 8 Técnicas Avanzadas de Diseño de Landing Pages 
 Las dos técnicas de imagen/vídeo son deliberadamente **prompt-instrucciones, no generación
 real**: la app no integra ningún modelo de imagen ni de vídeo, y fingir que sí sería simular
 una integración — algo que el proyecto prohíbe explícitamente en todo lo demás.
+
+### Dónde aparecen las técnicas
+
+Las técnicas no tienen sección propia: `buildLandingPrompt` las escribe todas dentro de
+`SUBTRACTIVE DESIGN` (`getTechniques` filtra el catálogo por las elegidas). Primero va el
+"Diseño sustractivo", si está elegido; las demás, bajo `### Otras tecnicas activas`. De ahí:
+
+- **Ninguna elegida:** la sección queda vacía y se omite. El prompt tiene 16 secciones.
+- **Elegidas, pero no el "Diseño sustractivo":** la sección aparece igualmente con el título
+  `SUBTRACTIVE DESIGN`, aunque solo contenga otras técnicas. Es un título engañoso, no un fallo
+  de contenido.
+- **Secciones que no dependen de las técnicas:** `SEED STRING` y `NEGATIVE CONSTRAINTS` existen
+  siempre. Desmarcar "Cadenas Semilla" o "Restricciones negativas reforzadas" solo quita el
+  texto de refuerzo de `SUBTRACTIVE DESIGN`; la Seed se genera y se escribe en cualquier caso.
+
+**Comprobado (2026-09-30)** ejecutando `buildLandingPrompt` con el proyecto de ejemplo de
+`.data/db.json` y seis selecciones —ninguna, solo `ambitious-prompts`, solo
+`subtractive-design`, solo `seed-strings`, las cuatro por defecto y las ocho—: en todos los
+casos el texto de una técnica aparece **si y solo si** se eligió. Es el borrador determinista;
+con el LLM las garantías son menores, ver abajo.
+
+### Con el LLM: qué se garantiza y qué no
+
+> **Problema conocido, sin corregir.** Lo de abajo se comprobó sustituyendo la respuesta del
+> modelo por textos simulados (no hay claves en este entorno): prueba lo que el código
+> *comprueba*, no lo que haría un modelo concreto. No se ha probado con un modelo real.
+
+| Garantía | Estado |
+| --- | --- |
+| El borrador que recibe el LLM solo trae las técnicas elegidas | **Sí** (verificado arriba). |
+| Con ninguna técnica, el prompt final no tiene el bloque `SUBTRACTIVE DESIGN` | **No está garantizado.** |
+| Las técnicas elegidas llegan al prompt final | **No se comprueba.** |
+| El LLM no añade técnicas que no se eligieron | **No se comprueba.** |
+
+Por qué:
+
+1. **La petición contradice al borrador.** `buildComposerUserPrompt` termina con «Escribe las
+   `${SECTION_ORDER.length}` secciones completas» —siempre 17— aunque el borrador traiga 16.
+   Con ninguna técnica elegida, la regla 1 del sistema («mismos títulos que recibas, no
+   inventes secciones») choca con esa línea, y un modelo que dé prioridad a la segunda puede
+   escribir `SUBTRACTIVE DESIGN` por su cuenta. Qué hace cada modelo no se ha medido.
+2. **Las secciones sobrantes se aceptan.** `assertHasRequiredSections` solo exige que estén
+   las secciones que traía el borrador. `parseComposedSections` reconoce cualquiera de los 17
+   títulos, así que una sección que el borrador no tenía entra en el prompt final. Simulado:
+   respuesta con un `## SUBTRACTIVE DESIGN` inventado y ninguna técnica elegida → el bloque
+   aparece en el resultado.
+3. **El contenido de las técnicas no se valida.** `VERBATIM_SECTIONS` es solo `TECHNOLOGY` y
+   `NEGATIVE CONSTRAINTS`; `SUBTRACTIVE DESIGN` la reescribe el modelo con libertad. Simulado:
+   respuesta que deja el bloque sin el texto de la técnica elegida → se acepta; respuesta que
+   añade el texto de una técnica no elegida → se acepta.
+
+**Mientras no se corrija:** el prompt compuesto se guarda y se muestra entero antes de gastar
+la llamada de generación (decisión 10 de [`ARCHITECTURE.md`](ARCHITECTURE.md)), así que basta
+con revisar la sección `SUBTRACTIVE DESIGN` en el Prompt Studio —o comprobar que no existe si no
+elegiste ninguna técnica— antes de pulsar "Generar HTML". Ninguna insignia avisa de esto hoy.
+
+**Corrección propuesta (no aplicada)**, de menor a mayor alcance:
+
+- Que la petición diga el número real de secciones del borrador (`draft.sections.length`) y
+  enumere sus títulos.
+- Descartar tras el análisis cualquier sección que el borrador no trajera.
+- Tratar el bloque de técnicas como `TECHNOLOGY` y `NEGATIVE CONSTRAINTS`: copiarlo tal cual
+  del borrador después de la respuesta del modelo, porque son instrucciones para el generador de
+  la página y no material creativo. Si se prefiere que el modelo lo reescriba, como mínimo
+  comprobar que el texto de cada técnica elegida sigue presente.
+
+No hay un script permanente que cubra esto; al corregirlo conviene añadir uno a
+`scripts/verify-*.mjs` (las pruebas de esta sección fueron temporales).
 
 ---
 

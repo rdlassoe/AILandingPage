@@ -419,6 +419,13 @@ Aplicada tanto a la aplicación como a lo que genera:
 - **Los modelos se saturan.** Un `503` en el modelo recién salido es habitual; uno más
   antiguo suele responder. No es un fallo de la aplicación y conviene no diagnosticarlo como
   tal: la tabla `generations` guarda el estado y el mensaje del proveedor.
+- **Las técnicas de diseño no están garantizadas en la composición con LLM.** El borrador
+  determinista solo contiene las elegidas (comprobado), pero `composePromptViaLLM` pide
+  siempre «17 secciones» aunque el borrador traiga 16, acepta secciones que el borrador no
+  tenía y no valida que las técnicas elegidas sobrevivan a la reescritura. Con ninguna técnica
+  elegida, el modelo puede inventar el bloque `SUBTRACTIVE DESIGN`. Detalle, evidencia
+  (con respuestas simuladas, sin modelo real) y corrección propuesta en
+  [`PROMPT_ENGINE.md`](PROMPT_ENGINE.md#con-el-llm-qué-se-garantiza-y-qué-no). Sin corregir.
 - **Editor de código e inspector** (decisión 11):
   - No localiza la **regla CSS** que afecta a un elemento, solo su etiqueta. Un estilo
     incorrecto suele vivir en un `<style>`, no en la etiqueta: hoy hay que buscarlo en el editor

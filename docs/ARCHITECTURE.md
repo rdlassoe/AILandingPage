@@ -241,7 +241,8 @@ LLM antes de guardarlo como versión definitiva:
    Se ejecuta **siempre**: la Seed ya no es una elección del proyecto ni existe un catálogo
    que consultar (ver [`SEED_ENGINE_MIGRATION.md`](SEED_ENGINE_MIGRATION.md)), así que no hay
    ninguna condición que la salte.
-2. **`composePromptViaLLM`** reescribe el borrador de 17 secciones. El stack tecnológico (lo
+2. **`composePromptViaLLM`** reescribe el borrador (17 secciones, o 16 si no se eligió ninguna
+   técnica de diseño). El stack tecnológico (lo
    elige el usuario, no el LLM) y las restricciones negativas viajan como bloques que el
    modelo debe copiar tal cual. La sección `SEED STRING` es distinta a propósito: en el
    borrador solo trae el string en crudo, y es este mismo modelo quien debe **manipularlo**
@@ -264,9 +265,15 @@ ejecutando la función dos veces, sino de que cada prompt —lo redacte quien lo
 guardado de forma inmutable en `prompt_versions`. Eso no cambia.
 
 **Coste.** Una generación con proveedor real pasa de 1 llamada a 3 (Seed + composición +
-landing), del mismo orden que ya suponía activar DISCOVER. Si el modelo no sigue el formato
-de 17 secciones exigido, se cae al borrador determinista en vez de fallar: nunca se deja al
-usuario sin prompt.
+landing), del mismo orden que ya suponía activar DISCOVER. Si el modelo omite alguna de las
+secciones que traía el borrador, se cae al borrador determinista en vez de fallar: nunca se deja
+al usuario sin prompt.
+
+**Límite conocido.** Esa comprobación es solo de *presencia*: no detecta secciones de más ni
+valida el contenido de las técnicas de diseño. Con ninguna técnica elegida, la petición al
+modelo sigue pidiendo 17 secciones aunque el borrador traiga 16, y un bloque `SUBTRACTIVE
+DESIGN` inventado se acepta. Detalle, evidencia y corrección propuesta en
+[`PROMPT_ENGINE.md`](PROMPT_ENGINE.md#con-el-llm-qué-se-garantiza-y-qué-no).
 
 **Restricción heredada.** El refinamiento y las variantes **no** vuelven a llamar a
 `buildPromptForProject`: leen las `sections` ya guardadas en la `prompt_version` que produjo

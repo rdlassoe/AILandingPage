@@ -414,6 +414,11 @@ plantilla `[YOUR-PASSWORD]` y que los caracteres especiales estén codificados p
   La autenticación real es Supabase Auth.
 - Con claves de Supabase en `.env.local`, `npm run dev` usa Supabase. Para probar en modo local
   sin tocar tus datos, ver [`docs/ENVIRONMENT.md`](docs/ENVIRONMENT.md#forzar-el-modo-local-sin-tocar-envlocal).
+- Técnicas de diseño con LLM: el borrador solo incluye las técnicas elegidas, pero el modelo
+  puede añadir el bloque `SUBTRACTIVE DESIGN` aunque no hayas elegido ninguna, y el código no lo
+  detecta ni valida que las elegidas se conserven. Revisa esa sección en el Prompt Studio antes
+  de generar el HTML. Detalle en
+  [`docs/PROMPT_ENGINE.md`](docs/PROMPT_ENGINE.md#con-el-llm-qué-se-garantiza-y-qué-no).
 - Editor de código: no localiza la regla CSS que afecta a un elemento (solo su etiqueta) y no hay
   pantalla para restaurar o comparar versiones. Verificado a 360 px en claro y oscuro y, en el
   Studio, también a 768, 1024 y 1440 px; lo que falta por medir está en
