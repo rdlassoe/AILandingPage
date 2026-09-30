@@ -119,6 +119,7 @@ export const composePromptSchema = z.object({
   promptId: z.string().trim().min(1).optional(),
   providerId: providerIdSchema.optional(),
   model: z.string().trim().max(120).optional(),
+  designTechniques: z.array(z.string().trim().min(1)).max(20).optional(),
 });
 
 export const critiqueSchema = z.object({

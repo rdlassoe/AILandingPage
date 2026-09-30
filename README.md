@@ -328,6 +328,13 @@ Fue retirado. Listar modelos no garantiza que respondan: revisa el catálogo de
 **«Has alcanzado el límite de N generaciones por hora»**
 Ajusta `RATE_LIMIT_MAX_REQUESTS` o espera a que la ventana se deslice.
 
+**«El prompt no lo compuso el LLM» (badge "borrador (sin LLM)" en el Prompt Studio)**
+"Generar prompt" pidió a un proveedor real componer el prompt, pero falló (cuota agotada,
+timeout, formato inválido) y se usó el borrador determinista como red de seguridad — sigue
+siendo un prompt válido, solo que sin la Seed aplicada por el modelo. Pulsa "Generar prompt"
+de nuevo; si vuelve a pasar seguido con Groq, es su límite real de 8 000 tokens/min, espera
+~1 minuto entre intentos.
+
 **Los datos del modo local no se borran**
 `LocalDataStore` mantiene la base en memoria del proceso. Para empezar de cero: para el
 servidor, borra `./.data` y vuelve a arrancar.

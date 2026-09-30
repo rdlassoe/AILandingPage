@@ -139,6 +139,12 @@ export async function composePromptViaLLM(ctx: ComposeContext, draft: BuiltPromp
     providerId: ctx.providerId,
     model: ctx.model,
     responseFormat: 'text',
+    // Esta llamada siempre sigue, dentro de la misma operacion, a la que
+    // genera el string aleatorio de la Seed (`generateRandomSeedString`,
+    // segundos antes): aplicarle tambien el enfriamiento la bloqueaba casi
+    // siempre, y el composer caia al borrador determinista EN SILENCIO, sin
+    // avisar. El enfriamiento ya se aplico en la llamada de la Seed.
+    skipCooldown: true,
   });
 
   const sections = parseComposedSections(outcome.text);
@@ -155,6 +161,7 @@ export async function composePromptViaLLM(ctx: ComposeContext, draft: BuiltPromp
       content,
       sections: ordered,
       estimatedTokens: estimateTokens(content) + estimateTokens(draft.systemInstruction ?? DEFAULT_SYSTEM_INSTRUCTION),
+      composedByLLM: true,
     },
     latencyMs: outcome.latencyMs,
     inputTokens: outcome.inputTokens,

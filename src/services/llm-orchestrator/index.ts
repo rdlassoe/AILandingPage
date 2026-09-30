@@ -59,7 +59,7 @@ export async function runLLM(request: OrchestratorRequest): Promise<Orchestrator
   // Ollama corre en la maquina del usuario: tampoco consume cuota de un
   // tercero, asi que se exime por el mismo motivo.
   if (provider.id !== 'mock' && provider.id !== 'ollama') {
-    checkRateLimit(request.ownerId);
+    checkRateLimit(request.ownerId, { skipCooldown: request.skipCooldown });
   }
 
   const response = await callWithSingleRetry(async () =>

@@ -93,6 +93,11 @@ export function PromptStudio({
     () => providers.find((item) => item.id === providerId) ?? providers[0],
     [providers, providerId],
   );
+  // Se pidio un proveedor real y configurado, pero la composicion cayo al
+  // borrador determinista (limite de cuota, timeout, formato invalido...).
+  // Distinto del caso "proveedor sin clave": ese ya avisa por separado y aqui
+  // ni siquiera se intenta el LLM.
+  const composeFallback = !!built && !built.composedByLLM && !!provider && provider.id !== 'mock' && provider.configured;
 
   /**
    * Limpia el prompt actual: no hay borrador ni aproximacion, solo lo que
@@ -148,6 +153,7 @@ export function PromptStudio({
       projectId: project.id,
       providerId,
       model: model || undefined,
+      designTechniques: techniqueIds,
     });
 
     if (!result.ok) {
@@ -430,6 +436,15 @@ export function PromptStudio({
         </Alert>
       ) : null}
 
+      {composeFallback ? (
+        <Alert tone="warn" title="El prompt no lo compuso el LLM">
+          {provider?.label ?? 'El proveedor'} no pudo reescribir el prompt (limite de cuota, fallo
+          transitorio o formato invalido) y se uso el borrador determinista como red de seguridad.
+          Este prompt es valido, pero no tiene la Seed aplicada por el modelo. Pulsa &quot;Generar
+          prompt&quot; de nuevo para reintentarlo con el LLM real.
+        </Alert>
+      ) : null}
+
       {error ? <Alert tone="danger">{error}</Alert> : null}
       {notice ? <Alert tone="ok">{notice}</Alert> : null}
 
@@ -441,7 +456,8 @@ export function PromptStudio({
             title={
               <span className="flex items-center gap-2">
                 Prompt
-                {composedVersionId && !edited ? <Badge tone="ok">generado</Badge> : null}
+                {composedVersionId && !edited && !composeFallback ? <Badge tone="ok">generado</Badge> : null}
+                {composeFallback && !edited ? <Badge tone="warn">borrador (sin LLM)</Badge> : null}
                 {edited ? <Badge tone="warn">editado</Badge> : null}
               </span>
             }

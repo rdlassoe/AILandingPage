@@ -28,6 +28,7 @@ import type {
   BuiltPrompt,
   ComposePromptInput,
   ComposePromptResult,
+  DesignTechniqueId,
   GenerateLandingInput,
   GenerateLandingResult,
   RandomSeedResult,
@@ -75,7 +76,7 @@ export interface GenerationContext {
 export async function buildPromptForProject(
   ctx: GenerationContext,
   project: Project,
-  options: { providerId?: ProviderId; model?: string } = {},
+  options: { providerId?: ProviderId; model?: string; designTechniques?: DesignTechniqueId[] } = {},
 ): Promise<BuiltPrompt> {
   const technologies = await ctx.store.getTechnologiesByIds(project.technical.technologyIds);
 
@@ -96,7 +97,7 @@ export async function buildPromptForProject(
     technologies,
     randomSeedString: seed.randomString,
     negativeConstraints: project.negativeConstraints,
-    designTechniques: DEFAULT_TECHNIQUE_IDS,
+    designTechniques: options.designTechniques ?? DEFAULT_TECHNIQUE_IDS,
     discover: project.discover,
     define: project.define,
   });
@@ -169,7 +170,11 @@ export async function composeAndPersistPrompt(
   if (!project) throw notFound('ese proyecto');
   assertProjectIsGeneratable(project);
 
-  const built = await buildPromptForProject(ctx, project, { providerId: input.providerId, model: input.model });
+  const built = await buildPromptForProject(ctx, project, {
+    providerId: input.providerId,
+    model: input.model,
+    designTechniques: input.designTechniques,
+  });
   const prompt = await ensurePrompt(ctx, project, input.promptId, built.technologyIds);
 
   const promptVersion = await ctx.store.createPromptVersion(ctx.ownerId, {
@@ -397,6 +402,10 @@ export async function generateLanding(
     technologyIds: built.technologyIds,
     seedStringValue: built.seedStringValue,
     existingLandingId: null,
+    // buildPromptForProject, arriba, ya hizo 1-2 llamadas reales (Seed +
+    // composicion) segundos antes: sin esto, esta tercera llamada caia casi
+    // siempre en el enfriamiento.
+    skipCooldown: true,
   });
 }
 
@@ -574,6 +583,9 @@ export async function generateVariation(
     // Una variante es una Landing Page nueva, no una version de la anterior.
     existingLandingId: null,
     nameSuffix: strategy.label,
+    // Si se genero una Seed nueva, esa llamada ya paso segundos antes por el
+    // enfriamiento: esta la seguiria bloqueando casi siempre.
+    skipCooldown: !!freshSeed,
   });
 }
 
@@ -598,6 +610,8 @@ interface RunGenerationInput {
   /** Si viene, la salida se guarda como nueva version de esa Landing Page. */
   existingLandingId: string | null;
   nameSuffix?: string;
+  /** Ver `skipCooldown` en `OrchestratorRequest`: para cuando esta llamada sigue, en la misma operacion, a otra ya limitada (p.ej. la Seed que se acaba de generar). */
+  skipCooldown?: boolean;
 }
 
 async function runGeneration(
@@ -634,6 +648,7 @@ async function runGeneration(
       providerId: input.providerId,
       model: input.model,
       config: input.config,
+      skipCooldown: input.skipCooldown,
     });
 
     // Paso 10: validacion del HTML

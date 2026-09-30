@@ -68,6 +68,16 @@ export interface BuiltPrompt {
   negativeConstraints: string[];
   /** Estimacion aproximada de tokens para avisar antes de enviar. */
   estimatedTokens: number;
+  /**
+   * true solo cuando un LLM real reescribio este prompt (`composePromptViaLLM`
+   * tuvo exito). false en modo demo (nunca hay LLM, es lo esperado) y
+   * tambien false cuando SI habia un proveedor real pero la composicion fallo
+   * (limite de cuota, timeout, formato invalido...) y se cayo al borrador
+   * determinista como red de seguridad — ese segundo caso es el que la
+   * interfaz debe avisar, porque de lo contrario es indistinguible de un
+   * exito.
+   */
+  composedByLLM: boolean;
 }
 
 /* -------------------------------------------------------------------------
@@ -111,6 +121,8 @@ export interface OrchestratorRequest {
   allowCache?: boolean;
   timeoutMs?: number;
   signal?: AbortSignal;
+  /** Salta el enfriamiento entre peticiones: para una llamada que sigue, en la misma operacion, a otra ya limitada (ver `checkRateLimit`). La ventana por hora se sigue aplicando. */
+  skipCooldown?: boolean;
 }
 
 export interface OrchestratorResult {
@@ -156,6 +168,8 @@ export interface ComposePromptInput {
   promptId?: string;
   providerId?: ProviderId;
   model?: string;
+  /** Tecnicas activas en el Prompt Studio; si falta, se usan las de `defaultEnabled: true`. */
+  designTechniques?: DesignTechniqueId[];
 }
 
 export interface ComposePromptResult {

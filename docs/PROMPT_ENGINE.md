@@ -44,6 +44,25 @@ gratuita y determinista de siempre (nunca invoca un LLM, ver más abajo): el Pro
 no la llama automáticamente al cargar la página ni al cambiar de técnicas, precisamente para
 no mostrar una aproximación que se pueda confundir con el prompt real.
 
+`POST /api/prompts/compose` recibe las técnicas activas del Prompt Studio
+(`designTechniques`) y las pasa hasta `buildPromptForProject`, que a su vez las usa para
+`buildLandingPrompt` en lugar del conjunto fijo por defecto. Antes de corregirlo, esta
+llamada ignoraba por completo lo que el usuario marcaba o desmarcaba en el panel de técnicas
+y siempre usaba las que tienen `defaultEnabled: true` — un bug real, no documentación
+desactualizada: marcar o desmarcar una técnica no cambiaba nada en el prompt que de verdad se
+enviaba a generar.
+
+**Que "Generar prompt" responda 200 no significa que un LLM haya escrito el resultado.** Si
+la composición falla —límite de cuota, timeout, formato inválido— `buildPromptForProject` cae
+al borrador determinista como red de seguridad, y antes lo hacía sin ningún aviso: la
+respuesta seguía siendo un `BuiltPrompt` válido, indistinguible de un éxito. Ahora
+`BuiltPrompt.composedByLLM` distingue los dos casos (`true` solo tras una reescritura real por
+LLM), y el Prompt Studio muestra un aviso y cambia el badge cuando esto ocurre con un
+proveedor real y configurado — en modo demo `composedByLLM` también es `false`, pero ahí es
+el comportamiento esperado y no se avisa. Detalle de por qué la segunda llamada (la
+composición) es la que más a menudo fallaba en
+[`LLM_PROVIDERS.md`](LLM_PROVIDERS.md#el-enfriamiento-entre-pasos-internos-de-una-misma-acción).
+
 ---
 
 ## Las 17 secciones

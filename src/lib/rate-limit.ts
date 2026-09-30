@@ -31,7 +31,15 @@ export interface RateLimitStatus {
   resetsInMs: number;
 }
 
-export function checkRateLimit(userId: string): RateLimitStatus {
+/**
+ * `skipCooldown` existe para llamadas que forman parte de la MISMA operacion
+ * que otra llamada ya pasada por aqui hace instantes (p.ej. generar la Seed y
+ * luego componer el prompt con ella): el enfriamiento esta pensado para
+ * espaciar acciones distintas del usuario, no los pasos internos de una sola
+ * accion. La ventana deslizante (limite por hora) SI se sigue aplicando
+ * siempre: protege la cuota total, no el ritmo entre pasos.
+ */
+export function checkRateLimit(userId: string, options: { skipCooldown?: boolean } = {}): RateLimitStatus {
   const now = Date.now();
   const record = usage.get(userId) ?? { timestamps: [], lastRequestAt: 0 };
 
@@ -39,7 +47,7 @@ export function checkRateLimit(userId: string): RateLimitStatus {
   const recent = record.timestamps.filter((ts) => ts > windowStart);
 
   const sinceLast = now - record.lastRequestAt;
-  if (record.lastRequestAt > 0 && sinceLast < env.rateLimit.cooldownMs) {
+  if (!options.skipCooldown && record.lastRequestAt > 0 && sinceLast < env.rateLimit.cooldownMs) {
     const waitSeconds = Math.ceil((env.rateLimit.cooldownMs - sinceLast) / 1000);
     throw new AppException({
       code: 'rate_limited',

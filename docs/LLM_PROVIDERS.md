@@ -299,6 +299,29 @@ demo y Ollama están exentos —ninguno de los dos consume cuota de un tercero�
 el enfriamiento bloquearía pasos encadenados del flujo (generar y auditar seguidos) sin
 ninguna ganancia.
 
+### El enfriamiento entre pasos internos de una misma acción
+
+Algunas acciones del usuario disparan **más de una** llamada real seguida: "Generar prompt"
+genera primero la Seed y luego compone con ella (ver
+[`ARCHITECTURE.md`](ARCHITECTURE.md#10-componer-el-prompt-es-un-paso-explícito-no-un-efecto-colateral-de-generar)),
+y una variante con "nueva Seed" hace lo mismo antes de generar. Esas dos llamadas quedan a
+menudo a 1-2 segundos una de otra — menos que `RATE_LIMIT_COOLDOWN_MS` (3 s por defecto) —
+así que la segunda se bloqueaba casi siempre, y `buildPromptForProject` caía al borrador
+determinista **sin avisar**, indistinguible de un éxito.
+
+`checkRateLimit(userId, { skipCooldown })` resuelve esto: la llamada que **inicia** la acción
+respeta el enfriamiento con normalidad (frente a la acción anterior del usuario), pero la
+llamada que la **continúa**, en la misma operación, lo salta — aunque sigue contando para la
+ventana por hora, que protege la cuota total, no el ritmo entre pasos. Se aplica en
+`composePromptViaLLM` (siempre sigue a `generateRandomSeedString`), en el camino de
+`generateLanding` que compone y genera en una sola llamada, y en `generateVariation` cuando
+la estrategia pide una Seed nueva.
+
+Si la composición falla igualmente —por ejemplo por el límite real de tokens por minuto de
+Groq, no por este enfriamiento—, el `BuiltPrompt` resultante lleva `composedByLLM: false` y
+el Prompt Studio lo avisa en pantalla en vez de mostrar el borrador como si fuera un éxito
+silencioso.
+
 ### Consumo real medido
 
 | Fase | Entrada | Salida | Latencia |

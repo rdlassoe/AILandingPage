@@ -300,6 +300,27 @@ la página ni al cambiar de técnicas: el panel de prompt arranca vacío y "Gene
 versión adicional (`changeNote: 'Prompt editado manualmente en el Prompt Studio'`) ligada al
 mismo `Prompt`, igual que ya hacía el camino sin `promptVersionId`.
 
+**Dos bugs que este cambio dejó al descubierto, ya arreglados.**
+
+1. *Las técnicas de diseño no llegaban a la composición real.* `buildPromptForProject` tenía
+   `designTechniques: DEFAULT_TECHNIQUE_IDS` fijo en el código: lo que el usuario marcaba o
+   desmarcaba en el Prompt Studio nunca se le pasaba. Antes de este cambio pasaba
+   desapercibido porque la única vista previa (`/api/prompts/generate`) sí las respetaba;
+   al dejar de llamarse automáticamente, quedó expuesto — el usuario cambiaba técnicas y el
+   prompt "real" no cambiaba nunca. `buildPromptForProject` acepta ahora `designTechniques`
+   como parámetro, hilado desde `composeAndPersistPrompt` hasta el Prompt Studio.
+2. *La composición chocaba con su propio enfriamiento.* "Generar prompt" hace dos llamadas
+   reales seguidas (Seed, luego composición) separadas por 1-2 s — menos que
+   `RATE_LIMIT_COOLDOWN_MS` — así que la segunda se bloqueaba casi siempre y
+   `buildPromptForProject` caía al borrador determinista **en silencio**. Detalle de la
+   solución (`skipCooldown`) en
+   [`LLM_PROVIDERS.md`](LLM_PROVIDERS.md#el-enfriamiento-entre-pasos-internos-de-una-misma-acción).
+   Como esa caída silenciosa podía seguir ocurriendo por otros motivos (el límite real de
+   tokens/min de Groq, un timeout, un formato inválido), `BuiltPrompt` ahora lleva
+   `composedByLLM: boolean` — `false` tanto en modo demo (esperado) como cuando un proveedor
+   real falló y se usó el borrador (no esperado) — y el Prompt Studio avisa explícitamente en
+   este segundo caso en vez de mostrar el borrador como si fuera un éxito.
+
 ---
 
 ## Manejo de errores

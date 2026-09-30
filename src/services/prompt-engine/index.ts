@@ -275,6 +275,7 @@ export function buildLandingPrompt(input: PromptBuildInput): BuiltPrompt {
     seedStringValue: input.randomSeedString,
     negativeConstraints,
     estimatedTokens: estimateTokens(content) + estimateTokens(DEFAULT_SYSTEM_INSTRUCTION),
+    composedByLLM: false,
   };
 }
 

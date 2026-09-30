@@ -2,6 +2,7 @@ import { parseBody, withContext } from '@/app/api/_lib/route-helpers';
 import { composeAndPersistPrompt } from '@/services/landing-generator';
 import { composePromptSchema } from '@/lib/validation/schemas';
 import type { ProviderId } from '@/types/llm';
+import type { DesignTechniqueId } from '@/types/services';
 
 /**
  * POST /api/prompts/compose
@@ -26,6 +27,7 @@ export async function POST(request: Request) {
         promptId: input.promptId,
         providerId: input.providerId as ProviderId | undefined,
         model: input.model,
+        designTechniques: input.designTechniques as DesignTechniqueId[] | undefined,
       },
     );
   });
