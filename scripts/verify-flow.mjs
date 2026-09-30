@@ -236,6 +236,89 @@ const run = async () => {
   const leak = await fetch(`${BASE}/api/projects/${projectId}`, { headers: { cookie: otherCookie } });
   log(leak.status === 403 || leak.status === 404, 'Un usuario no puede leer el proyecto de otro', `status=${leak.status}`);
 
+  // 13b. Edicion manual del HTML: `PUT /api/landings/[id]/html`
+  //      Guardado real y definitivo: actualiza la pagina Y crea una version.
+  const putHtml = (asCookie, html, expectedVersion) =>
+    fetch(`${BASE}/api/landings/${landing.id}/html`, {
+      method: 'PUT',
+      headers: { cookie: asCookie, 'content-type': 'application/json' },
+      body: JSON.stringify(expectedVersion === undefined ? { html } : { html, expectedVersion }),
+    }).then(async (response) => ({ status: response.status, ...(await response.json().catch(() => ({}))) }));
+
+  const current = (await call('GET', `/api/landings/${landing.id}`)).data;
+  const versionBefore = current.currentVersion;
+  const baseHtml = current.html;
+  // El cambio quita `lang` (el critico lo detecta) y cambia el titular. Sin `lang` el documento sigue siendo valido.
+  const editedHtml = baseHtml
+    .replace(/<html lang="[^"]*"/i, '<html')
+    .replace(/<h1>[^<]*<\/h1>/i, '<h1>Titular editado a mano</h1>');
+  log(editedHtml !== baseHtml && !/<html[^>]+lang=/i.test(editedHtml), 'Preparada una edicion manual del HTML');
+
+  const edit = await putHtml(cookie, editedHtml, versionBefore);
+  log(edit.status === 200 && edit.data?.changed === true, 'PUT /api/landings/[id]/html guarda la edicion', `status=${edit.status}`);
+  log(
+    edit.data?.landing?.currentVersion === versionBefore + 1,
+    'La edicion crea una version nueva y la deja como vigente',
+    `v${versionBefore} -> v${edit.data?.landing?.currentVersion}`,
+  );
+  log(edit.data?.landing?.html === editedHtml, 'El HTML se guarda exactamente como se envio (sin normalizar)');
+  log(edit.data?.landing?.metadata?.criticScore === null, 'La puntuacion del critico se invalida (era de otro HTML)');
+
+  const stored = (await call('GET', `/api/landings/${landing.id}`)).data;
+  log(stored?.html === editedHtml && stored?.currentVersion === versionBefore + 1, 'El cambio persiste al volver a leer la pagina');
+
+  const versionsAfterEdit = (await call('GET', `/api/landings/${landing.id}/versions`)).data ?? [];
+  log(
+    versionsAfterEdit.length === versionBefore + 1 &&
+      versionsAfterEdit[0]?.label === 'Edicion manual' &&
+      versionsAfterEdit[0]?.html === editedHtml,
+    'El historial guarda la version "Edicion manual"',
+    `versiones=${versionsAfterEdit.length}`,
+  );
+  log(
+    versionsAfterEdit[0]?.promptVersionId === current.promptVersionId,
+    'La version manual conserva la version de prompt de origen (trazabilidad)',
+  );
+
+  const noop = await putHtml(cookie, editedHtml, versionBefore + 1);
+  const versionsAfterNoop = (await call('GET', `/api/landings/${landing.id}/versions`)).data ?? [];
+  log(
+    noop.status === 200 && noop.data?.changed === false && versionsAfterNoop.length === versionsAfterEdit.length,
+    'Guardar el mismo HTML no crea una version nueva',
+  );
+
+  const empty = await putHtml(cookie, '', versionBefore + 1);
+  log(empty.status === 422, 'Un HTML vacio se rechaza con 422 y no se persiste', `status=${empty.status}`);
+  const fragment = await putHtml(cookie, '<div>un fragmento suelto</div>', versionBefore + 1);
+  log(fragment.status === 422, 'Un fragmento sin <html> se rechaza en vez de "arreglarse" en silencio', `status=${fragment.status}`);
+  const afterRejected = (await call('GET', `/api/landings/${landing.id}`)).data;
+  log(afterRejected?.html === editedHtml, 'Las ediciones rechazadas no tocan el HTML guardado');
+
+  const stale = await putHtml(cookie, `${editedHtml}\n<!-- otro cambio -->`, versionBefore);
+  log(stale.status === 409 && stale.error?.code === 'conflict', 'Una version base desfasada responde 409', `status=${stale.status}`);
+
+  const otherEdit = await putHtml(otherCookie, `${editedHtml}\n<!-- intruso -->`);
+  log(otherEdit.status === 403 || otherEdit.status === 404, 'Otra cuenta no puede editar una pagina privada', `status=${otherEdit.status}`);
+
+  // Una pagina PUBLICA de otra cuenta se puede ver, pero no editar: aqui tiene que ser 403.
+  await call('PATCH', `/api/landings/${landing.id}`, { status: 'public' });
+  const publicEdit = await putHtml(otherCookie, `${editedHtml}\n<!-- intruso -->`);
+  log(publicEdit.status === 403, 'Otra cuenta no puede editar una pagina publica (403)', `status=${publicEdit.status}`);
+  await call('PATCH', `/api/landings/${landing.id}`, { status: 'private' });
+  const afterIntruder = (await call('GET', `/api/landings/${landing.id}`)).data;
+  log(afterIntruder?.html === editedHtml, 'El intento de otra cuenta no modifico el HTML');
+
+  await pause();
+  const reviewEdited = await call('POST', '/api/generations/critique', { landingPageId: landing.id, ...llm });
+  if (PROVIDER === 'mock') {
+    log(
+      reviewEdited.status === 200 && (reviewEdited.data?.issues ?? []).some((issue) => /idioma/i.test(issue.title)),
+      'El critico audita el HTML editado a mano (detecta el `lang` que se quito)',
+    );
+  } else {
+    log(reviewEdited.status === 200, 'El critico se ejecuta sobre el HTML editado a mano');
+  }
+
   // 14. Sin sesion
   const anon = await fetch(`${BASE}/api/projects`);
   log(anon.status === 401, 'Sin sesion la API responde 401', `status=${anon.status}`);

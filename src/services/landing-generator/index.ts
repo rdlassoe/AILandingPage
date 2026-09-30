@@ -1,7 +1,7 @@
 import 'server-only';
 
 import type { DataStore } from '@/lib/data/types';
-import { AppException, notFound } from '@/lib/errors';
+import { AppException, forbidden, notFound } from '@/lib/errors';
 import { truncate } from '@/lib/utils';
 import { resolveProvider } from '@/lib/llm/registry';
 import { runLLM } from '@/services/llm-orchestrator';
@@ -16,6 +16,7 @@ import {
   renderSeedBlock,
 } from '@/services/prompt-engine';
 import {
+  MANUAL_EDIT_LABEL,
   VARIATION_STRATEGIES,
   type Generation,
   type LandingPage,
@@ -33,6 +34,7 @@ import type {
   GenerateLandingResult,
   RandomSeedResult,
   RefineInput,
+  ValidationIssue,
   VariationInput,
 } from '@/types/services';
 
@@ -813,6 +815,91 @@ async function persistLanding(ctx: GenerationContext, input: PersistLandingInput
   });
 
   return landing;
+}
+
+export interface ManualEditInput {
+  html: string;
+  /** Version que el editor tenia cargada. Si ya no es la vigente, hubo otro cambio por medio. */
+  expectedVersion?: number;
+}
+
+export interface ManualEditResult {
+  landing: LandingPage;
+  /** Avisos no bloqueantes del validador (los bloqueantes rechazan el guardado). */
+  issues: ValidationIssue[];
+  /** `false` si el HTML era identico al vigente y no se creo ninguna version. */
+  changed: boolean;
+}
+
+/**
+ * Guarda el HTML editado a mano como la version vigente de la pagina.
+ *
+ * Es un guardado real y definitivo: actualiza `landing_pages.html` y crea una
+ * `landing_version` nueva con `MANUAL_EDIT_LABEL`. A partir de ahi el critico y
+ * el refinamiento operan sobre este HTML.
+ *
+ * El texto no se normaliza: lo que el usuario escribio es lo que se guarda, y
+ * si no es un documento utilizable se rechaza en vez de "arreglarlo" en
+ * silencio (un fragmento envuelto o texto recortado cambiaria lineas que el
+ * usuario no toco).
+ */
+export async function saveManualEdit(
+  ctx: GenerationContext,
+  landingId: string,
+  input: ManualEditInput,
+): Promise<ManualEditResult> {
+  const landing = await ctx.store.getLandingPage(ctx.ownerId, landingId);
+  if (!landing) throw notFound('esa Landing Page');
+  // `getLandingPage` tambien devuelve las paginas publicas de otras cuentas.
+  if (landing.ownerId !== ctx.ownerId) throw forbidden();
+
+  if (input.expectedVersion !== undefined && input.expectedVersion !== landing.currentVersion) {
+    throw new AppException({
+      code: 'conflict',
+      message: `La Landing Page cambio mientras la editabas: ahora esta en la v${landing.currentVersion}.`,
+      hint: 'Recarga la pagina para cargar la ultima version. Copia antes tu texto si quieres conservarlo.',
+    });
+  }
+
+  const validation = validateLandingOutput(input.html, { normalize: false });
+  const blocking = validation.issues.filter((issue) => issue.severity === 'error');
+  if (blocking.length > 0) {
+    throw new AppException({
+      code: 'validation',
+      message: `No se puede guardar este HTML: ${blocking.map((issue) => issue.message).join(' ')}`,
+      detail: JSON.stringify(validation.issues),
+    });
+  }
+
+  if (validation.html === landing.html) {
+    return { landing, issues: validation.issues, changed: false };
+  }
+
+  // Mismo orden que `persistLanding`: primero la pagina, despues la version.
+  const updated = await ctx.store.updateLandingPage(ctx.ownerId, landing.id, {
+    html: validation.html,
+    metadata: {
+      ...landing.metadata,
+      sections: validation.sections,
+      sizeBytes: validation.sizeBytes,
+      hasScript: validation.hasScript,
+      hasStyle: validation.hasStyle,
+      // La puntuacion del critico era de otro HTML.
+      criticScore: null,
+    },
+  });
+
+  await ctx.store.createLandingVersion(ctx.ownerId, {
+    landingPageId: landing.id,
+    html: validation.html,
+    label: MANUAL_EDIT_LABEL,
+    generationId: null,
+    promptVersionId: landing.promptVersionId,
+  });
+
+  // Se relee para devolver `currentVersion` ya incrementado.
+  const fresh = (await ctx.store.getLandingPage(ctx.ownerId, landing.id)) ?? updated;
+  return { landing: fresh, issues: validation.issues, changed: true };
 }
 
 async function ensurePrompt(

@@ -1,6 +1,5 @@
 import { parseBody, withContext } from '@/app/api/_lib/route-helpers';
 import { notFound } from '@/lib/errors';
-import { validateLandingOutput } from '@/services/output-validator';
 import { updateLandingSchema } from '@/lib/validation/schemas';
 import type { LandingPagePatch } from '@/lib/data/types';
 
@@ -30,26 +29,7 @@ export async function PATCH(request: Request, { params }: RouteParams) {
     if (input.status !== undefined) patch.status = input.status;
     if (input.category !== undefined) patch.category = input.category;
 
-    // Si se edita el HTML a mano, se vuelve a validar y se guarda como version.
-    if (input.html !== undefined) {
-      const validation = validateLandingOutput(input.html);
-      patch.html = validation.html;
-      patch.metadata = {
-        ...landing.metadata,
-        sections: validation.sections,
-        sizeBytes: validation.sizeBytes,
-        hasScript: validation.hasScript,
-        hasStyle: validation.hasStyle,
-      };
-      await ctx.store.createLandingVersion(ctx.user.id, {
-        landingPageId: id,
-        html: validation.html,
-        label: 'Edicion manual',
-        generationId: null,
-        promptVersionId: landing.promptVersionId,
-      });
-    }
-
+    // El HTML no se edita por aqui: ver `PUT /api/landings/[id]/html`.
     return ctx.store.updateLandingPage(ctx.user.id, id, patch);
   });
 }

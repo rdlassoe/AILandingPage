@@ -16,9 +16,19 @@ const MAX_SIZE_BYTES = 2 * 1024 * 1024;
 /** Por debajo de esto no hay pagina suficiente. */
 const MIN_SIZE_BYTES = 800;
 
-export function validateLandingOutput(raw: string): ValidatedOutput {
+export interface ValidateLandingOptions {
+  /**
+   * `false` en ediciones manuales: el texto del usuario no se toca (ni se
+   * recortan bloques ni se envuelven fragmentos), solo se informa. Con el
+   * valor por defecto se asume salida de un LLM y se normaliza.
+   */
+  normalize?: boolean;
+}
+
+export function validateLandingOutput(raw: string, options: ValidateLandingOptions = {}): ValidatedOutput {
   const issues: ValidationIssue[] = [];
-  const { html, normalized } = normalizeToDocument(raw, issues);
+  const { html, normalized } =
+    options.normalize === false ? { html: raw, normalized: false } : normalizeToDocument(raw, issues);
 
   const sizeBytes = Buffer.byteLength(html, 'utf8');
   const lower = html.toLowerCase();

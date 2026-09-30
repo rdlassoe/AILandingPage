@@ -6,9 +6,15 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Copy, Eye, FileCode2, Play, Save, Shuffle, Wand2 } from 'lucide-react';
 
 import { CriticPanel } from './critic-panel';
+import { HtmlCodeEditor } from '@/components/editor/html-code-editor.lazy';
 import { useActiveProvider } from '@/components/layout/active-provider-context';
 import { LandingPreview } from '@/components/preview/landing-preview';
 import { Alert, Badge, Button, Field, Panel, PanelBody, PanelHeader, Select } from '@/components/ui';
+import { EditorAlerts, EditorToolbar } from '@/features/editor/editor-controls';
+import { InspectorPanel } from '@/features/editor/inspector-panel';
+import { useDebouncedValue } from '@/features/editor/use-debounced-value';
+import { useInspectorSync } from '@/features/editor/use-inspector-sync';
+import { useLandingEditor } from '@/features/editor/use-landing-editor';
 import { apiPatch, apiPost } from '@/lib/api-client';
 import type { ProviderSummary } from '@/lib/llm/registry';
 import { cn, estimateTokens, formatDuration } from '@/lib/utils';
@@ -87,6 +93,20 @@ export function PromptStudio({
   const [criticError, setCriticError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [lastRun, setLastRun] = useState<LastRun | null>(null);
+
+  // Edicion del HTML generado. Guardar es explicito: lo escrito no es definitivo (y el
+  // critico no lo ve) hasta que se guarda como una version nueva.
+  const landingEditor = useLandingEditor(landing, {
+    onSaved: (next) => {
+      setLanding(next);
+      router.refresh();
+    },
+  });
+  // Mientras se escribe, la vista previa espera un instante; sin cambios, muestra el texto tal cual.
+  const debouncedDraft = useDebouncedValue(landingEditor.draft, 400);
+  const previewHtml = landingEditor.dirty ? debouncedDraft : landingEditor.draft;
+  // Un clic en la pagina lleva a la pestana del codigo, donde salta a la linea del elemento.
+  const inspector = useInspectorSync({ text: landingEditor.draft, onReveal: () => setView('code') });
 
   const project = useMemo(() => projects.find((item) => item.id === projectId) ?? null, [projects, projectId]);
   const provider = useMemo(
@@ -406,7 +426,9 @@ export function PromptStudio({
             </Select>
           </Field>
 
-          <div className="flex items-end gap-2">
+          {/* `flex-wrap`: a 360 px los dos botones (sin salto de linea) no caben en una fila y
+              ensanchaban toda la columna del Studio mas alla de su margen. */}
+          <div className="flex flex-wrap items-end gap-2">
             <Button variant="secondary" onClick={() => void composeFinalPrompt()} loading={busy === 'composing'}>
               <Wand2 className="size-4" aria-hidden="true" />
               Generar prompt
@@ -415,8 +437,14 @@ export function PromptStudio({
               variant="primary"
               onClick={generate}
               loading={generating}
-              disabled={!composedVersionId}
-              title={!composedVersionId ? 'Genera el prompt primero' : undefined}
+              disabled={!composedVersionId || landingEditor.dirty}
+              title={
+                !composedVersionId
+                  ? 'Genera el prompt primero'
+                  : landingEditor.dirty
+                    ? 'Guarda o descarta los cambios del codigo antes de generar otra pagina'
+                    : undefined
+              }
               className="flex-1"
             >
               <Play className="size-4" aria-hidden="true" />
@@ -450,7 +478,10 @@ export function PromptStudio({
 
       {/* Prompt | Preview */}
       <div className="grid gap-4 xl:grid-cols-2">
-        <Panel className="flex flex-col">
+        {/* `min-w-0` en las dos columnas: por debajo de `xl` la cuadricula es de una sola columna
+            y, sin el, las lineas largas del editor ensanchan la pista y toda la pagina se
+            desborda horizontalmente. */}
+        <Panel className="flex min-w-0 flex-col">
           <PanelHeader
             eyebrow="Prompt"
             title={
@@ -510,17 +541,27 @@ export function PromptStudio({
             {view === 'sections' ? <SectionList sections={built?.sections ?? []} /> : null}
 
             {view === 'code' && landing ? (
-              <div className="p-3">
-                <label htmlFor="html-output" className="sr-only">
-                  HTML generado
-                </label>
-                <textarea
-                  id="html-output"
-                  readOnly
-                  value={landing.html}
-                  spellCheck={false}
-                  className="h-[clamp(360px,52vh,640px)] w-full resize-y border border-line bg-bg p-3 font-mono text-xs leading-relaxed text-muted"
-                />
+              <div className="grid grid-cols-[minmax(0,1fr)] gap-2 p-3">
+                <EditorAlerts editor={landingEditor} />
+                <div className="border border-line">
+                  <EditorToolbar
+                    editor={landingEditor}
+                    cursor={inspector.cursor}
+                    onGoto={inspector.openGotoLine}
+                  />
+                  <HtmlCodeEditor
+                    value={landingEditor.draft}
+                    onChange={landingEditor.setDraft}
+                    onSave={() => void landingEditor.save()}
+                    label="Codigo HTML de la Landing Page generada"
+                    className="h-[clamp(360px,52vh,640px)] border-0"
+                    {...inspector.editorProps}
+                  />
+                </div>
+                <p className="text-xs text-muted">
+                  Ctrl+S guarda una version nueva &middot; usa &quot;Inspeccionar&quot; en la vista previa para saltar
+                  a la linea de un elemento.
+                </p>
               </div>
             ) : null}
           </div>
@@ -551,8 +592,10 @@ export function PromptStudio({
           </div>
         </Panel>
 
-        <div className="grid gap-4">
-          <LandingPreview html={landing?.html ?? ''} generating={generating} />
+        <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-4">
+          <LandingPreview html={previewHtml} generating={generating} {...inspector.previewProps} />
+
+          {landing ? <InspectorPanel sync={inspector} /> : null}
 
           {lastRun ? (
             <Panel>
@@ -603,8 +646,15 @@ export function PromptStudio({
       </div>
 
       {/* Critic Engine */}
+      {landing && landingEditor.dirty ? (
+        <Alert tone="warn" title="Hay cambios de codigo sin guardar">
+          El critico, el refinamiento y las variantes trabajan sobre la version guardada, no sobre lo que estas
+          editando. Guarda los cambios (Ctrl+S en la pestana Codigo) o descartalos antes de usarlos.
+        </Alert>
+      ) : null}
       {landing ? (
         <CriticPanel
+          locked={landingEditor.dirty}
           review={review}
           accepted={accepted}
           onToggle={toggleSuggestion}
@@ -682,7 +732,12 @@ export function PromptStudio({
                     </Select>
                   </Field>
                 </div>
-                <Button onClick={makeVariation} loading={busy === 'varying'}>
+                <Button
+                  onClick={makeVariation}
+                  loading={busy === 'varying'}
+                  disabled={landingEditor.dirty}
+                  title={landingEditor.dirty ? 'Guarda o descarta los cambios del codigo primero.' : undefined}
+                >
                   <Shuffle className="size-4" aria-hidden="true" />
                   Generar variante
                 </Button>

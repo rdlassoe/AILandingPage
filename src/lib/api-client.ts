@@ -61,6 +61,15 @@ export function apiPatch<T>(url: string, body: unknown, signal?: AbortSignal): P
   });
 }
 
+export function apiPut<T>(url: string, body: unknown, signal?: AbortSignal): Promise<ApiResult<T>> {
+  return request<T>(url, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+    signal,
+  });
+}
+
 export function apiDelete<T>(url: string, signal?: AbortSignal): Promise<ApiResult<T>> {
   return request<T>(url, { method: 'DELETE', signal });
 }

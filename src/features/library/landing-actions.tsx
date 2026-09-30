@@ -1,10 +1,11 @@
 'use client';
 
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
-import { Copy, Download, RotateCcw, Save, Trash2 } from 'lucide-react';
+import { Code2, Copy, Download, RotateCcw, Save, Trash2 } from 'lucide-react';
 
-import { Alert, Button, Field, Input, Select } from '@/components/ui';
+import { Alert, Button, Field, Input, Select, buttonClassName } from '@/components/ui';
 import { apiDelete, apiPatch, apiPost } from '@/lib/api-client';
 import type { LandingPage, LandingStatus } from '@/types/domain';
 
@@ -124,6 +125,17 @@ export function LandingActions({ landing }: { landing: LandingPage }) {
         <Save className="size-4" aria-hidden="true" />
         Guardar cambios
       </Button>
+
+      <div className="grid gap-2 border-t border-line pt-3">
+        <Link href={`/library/${landing.id}/edit`} className={buttonClassName()}>
+          <Code2 className="size-4" aria-hidden="true" />
+          Editar codigo
+        </Link>
+        <p className="text-xs text-faint">
+          Edita el HTML a mano, inspecciona la pagina y salta a la linea de cada elemento. Cada guardado crea una
+          version nueva en el historial.
+        </p>
+      </div>
 
       <div className="grid gap-2 border-t border-line pt-3">
         <Button onClick={reuse} loading={busy === 'reusing'}>

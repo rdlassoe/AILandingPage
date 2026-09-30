@@ -43,7 +43,8 @@ Groq ni Ollama.
 | **Prompt Composer** | Combina varias tecnologías, detecta conflictos y resuelve prioridades. |
 | **LLM Orchestrator** | Punto único de contacto con los modelos: proveedor, modelo, timeout, reintento único, límite de uso. |
 | **Output Validator** | Normaliza y valida la respuesta antes de mostrarla. No se confía en el modelo. |
-| **Preview Engine** | `iframe` + `srcDoc` con sandbox de origen opaco. |
+| **Preview Engine** | `iframe` + `srcDoc` con sandbox de origen opaco. Con el inspector activo, un clic en un elemento lleva el editor a su línea. |
+| **Code Editor** | Edita el HTML generado a mano (CodeMirror) y lo guarda como una versión nueva. Guardar es explícito; lo no guardado es un borrador local. |
 | **Critic Engine** | Agente crítico que audita UX, accesibilidad, jerarquía, responsive, CTA, copy y código. |
 | **Refinement** | Regenera aplicando solo las recomendaciones que el usuario acepta. |
 | **Landing Library** | Banco de páginas con versiones, filtros, prompt asociado y reutilización. |
@@ -180,10 +181,14 @@ npm run verify:flow -- --provider=ollama
 4. **Generar HTML.** Reutiliza ese mismo prompt ya compuesto (no lo recompone). El
    orquestador elige proveedor y modelo, el validador normaliza la salida y la vista previa la
    renderiza en un `iframe` aislado.
-5. **Auditar.** El Critic Engine devuelve problemas puntuados y acciones concretas.
-6. **Refinar.** Marcas las recomendaciones que aceptas; se genera una versión nueva.
-7. **Publicar.** La página queda en la biblioteca con su prompt, su versión y su historial.
-8. **Reutilizar.** Desde cualquier página puedes clonar su planteamiento a un proyecto nuevo.
+5. **Editar (opcional).** En la pestaña "Codigo" del Prompt Studio, o en `/library/[id]/edit`,
+   corriges el HTML a mano. Con "Inspeccionar" haces clic en un elemento de la vista previa y
+   el editor salta a su etiqueta. `Ctrl+S` guarda una versión nueva ("Edicion manual"); hasta
+   entonces el crítico y el refinamiento no ven tus cambios.
+6. **Auditar.** El Critic Engine devuelve problemas puntuados y acciones concretas.
+7. **Refinar.** Marcas las recomendaciones que aceptas; se genera una versión nueva.
+8. **Publicar.** La página queda en la biblioteca con su prompt, su versión y su historial.
+9. **Reutilizar.** Desde cualquier página puedes clonar su planteamiento a un proyecto nuevo.
 
 ---
 
@@ -198,13 +203,16 @@ src/
 ├── components/
 │   ├── ui/                   Kit de interfaz sin estado
 │   ├── layout/               Shell, navegación, búsqueda global
-│   └── preview/              Preview Engine (iframe + srcDoc)
+│   ├── preview/              Preview Engine (iframe + srcDoc, modo inspector)
+│   └── editor/               Editor de código CodeMirror (carga diferida)
 ├── features/                 Componentes con lógica por dominio
 │   ├── projects/  studio/  library/  technologies/  settings/
+│   └── editor/               Estado de edición, sincronía editor ↔ inspector, pantalla de edición
 ├── lib/
 │   ├── auth/                 Sesión (Supabase Auth o identidad local)
 │   ├── data/                 DataStore: interfaz + Supabase + local
 │   ├── llm/                  LLM Provider Layer (mock, gemini, groq, ollama, registro)
+│   ├── preview/              Instrumentación del HTML (parse5) y runtime del inspector
 │   ├── validation/           Esquemas Zod
 │   └── utils/  env.ts  errors.ts  rate-limit.ts  api-client.ts
 ├── services/                 Lógica de negocio pura
@@ -236,7 +244,8 @@ Arquitectura y decisiones en [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 | `POST` | `/api/generations/variation` | Crea una variante como página independiente. |
 | `POST` | `/api/discover` | Fase DISCOVER + derivación de DEFINE. |
 | `GET` | `/api/landings` | Biblioteca con filtros combinables. |
-| `GET/PATCH/DELETE` | `/api/landings/[id]` | Ficha de Landing Page. |
+| `GET/PATCH/DELETE` | `/api/landings/[id]` | Ficha de Landing Page (nombre, estado, categoría; el HTML no se cambia por aquí). |
+| `PUT` | `/api/landings/[id]/html` | Guarda el HTML editado a mano como versión nueva y vigente. `422` si no es un documento, `409` si la versión base está desfasada, `403` si la página es de otra cuenta. |
 | `GET` | `/api/landings/[id]/versions` | Historial de versiones. |
 | `POST` | `/api/landings/[id]/reuse` | Clona el planteamiento a un proyecto nuevo. |
 | `GET/POST` | `/api/technologies` | Catálogo y alta de tecnologías propias. |
@@ -262,6 +271,7 @@ npm run db:check    # diagnosticar el estado de la base, sin escribir
 npm run verify:supabase # validar esquema, RLS y mappers (transacción + rollback)
 npm run seed:sql    # regenerar supabase/seed.sql desde el catálogo
 npm run verify:flow # recorrido de aceptación de punta a punta (con el server arrancado)
+npm run verify:inspector # instrumentación del inspector y mensajes del iframe (sin servidor)
 ```
 
 ---
@@ -275,6 +285,10 @@ npm run verify:flow # recorrido de aceptación de punta a punta (con el server a
   allow-popups allow-modals"`. Al **no** incluir `allow-same-origin`, el documento generado
   corre en un origen opaco: puede ejecutar su propio JavaScript pero no leer cookies,
   `localStorage` ni tocar la ventana padre. No se usa `dangerouslySetInnerHTML`.
+- El inspector no relaja ese aislamiento: un script dentro del iframe avisa por `postMessage` y
+  el padre trata cada mensaje como dato no confiable (solo acepta el render actual, posiciones
+  dentro del texto y cadenas acotadas). Las marcas del inspector viven solo en una copia del
+  documento: el HTML guardado y el que se exporta no las llevan.
 - Con Supabase, el aislamiento entre cuentas lo aplica Row Level Security; el código filtra
   además por `owner_id` para que la intención sea explícita.
 - Toda entrada HTTP se valida con Zod antes de llegar al almacén o a un proveedor.
@@ -335,6 +349,28 @@ siendo un prompt válido, solo que sin la Seed aplicada por el modelo. Pulsa "Ge
 de nuevo; si vuelve a pasar seguido con Groq, es su límite real de 8 000 tokens/min, espera
 ~1 minuto entre intentos.
 
+**«Recuperamos cambios sin guardar» al abrir el editor**
+Cerraste o recargaste la pestaña con cambios sin guardar: el editor los guarda como borrador
+local en el navegador y los restaura. Siguen sin formar parte de la página hasta que pulses
+Guardar (o los descartes con "Descartarlos"). El crítico y el refinamiento no los ven.
+
+**«La página cambió mientras la editabas» (409)**
+Otra acción —un refinamiento, otra pestaña— creó una versión nueva mientras editabas. "Cargar
+la ultima" descarta tu texto; "Conservar mi texto" lo deja listo para guardarse como la versión
+siguiente y la anterior sigue en el historial.
+
+**«No se puede guardar este HTML» (422)**
+El guardado manual no "arregla" el documento: lo rechaza si no hay `<html>`/`<body>`, si pesa
+más de 2 MB o es demasiado corto. Corrígelo en el editor. Los avisos no bloqueantes (sin `lang`,
+sin `<h1>`, sin viewport…) se muestran tras guardar, pero no impiden el guardado.
+
+**El botón "Inspeccionar" está desactivado, o el clic no salta a la línea**
+Desactivado: el inspector no pudo cargarse (`parse5` es una descarga diferida) o no hay página
+que previsualizar. Sin salto: si escribiste hace un instante, la vista previa aún se estaba
+actualizando con tus cambios; el panel del inspector muestra un aviso y no se salta, para no
+caer en otra línea. Espera un momento y vuelve a pulsar. Un elemento que crea el JavaScript de
+la página no está en el código y se muestra su ancestro más cercano.
+
 **Los datos del modo local no se borran**
 `LocalDataStore` mantiene la base en memoria del proceso. Para empezar de cero: para el
 servidor, borra `./.data` y vuelve a arrancar.
@@ -376,3 +412,11 @@ plantilla `[YOUR-PASSWORD]` y que los caracteres especiales estén codificados p
   a Redis o a una tabla; la interfaz del módulo no cambiaría.
 - En modo local no hay contraseñas: el correo solo separa espacios de trabajo en el equipo.
   La autenticación real es Supabase Auth.
+- Con claves de Supabase en `.env.local`, `npm run dev` usa Supabase. Para probar en modo local
+  sin tocar tus datos, ver [`docs/ENVIRONMENT.md`](docs/ENVIRONMENT.md#forzar-el-modo-local-sin-tocar-envlocal).
+- Editor de código: no localiza la regla CSS que afecta a un elemento (solo su etiqueta) y no hay
+  pantalla para restaurar o comparar versiones. Verificado a 360 px en claro y oscuro y, en el
+  Studio, también a 768, 1024 y 1440 px; lo que falta por medir está en
+  [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md#responsive-y-modo-oscuro-del-editor).
+- `npm audit` reporta vulnerabilidades en `next@15.5.4`, fijado en `package.json` desde antes
+  del editor. Pendiente de actualizar a una 15.x parcheada.

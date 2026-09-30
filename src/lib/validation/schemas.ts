@@ -164,7 +164,13 @@ export const updateLandingSchema = z.object({
   description: trimmed(600).optional(),
   status: landingStatusSchema.optional(),
   category: trimmed(80).nullable().optional(),
-  html: z.string().max(4_000_000).optional(),
+});
+
+/** El HTML se guarda por su propia ruta: `PUT /api/landings/[id]/html`. */
+export const saveLandingHtmlSchema = z.object({
+  // Sin `.trim()`: el texto del editor se guarda tal cual lo escribio el usuario.
+  html: z.string().max(4_000_000),
+  expectedVersion: z.number().int().min(1).optional(),
 });
 
 export const createTechnologySchema = z.object({

@@ -8,6 +8,7 @@ import { LandingActions } from '@/features/library/landing-actions';
 import { Badge, DefinitionList, Panel, PanelBody, PanelHeader } from '@/components/ui';
 import { requireContext } from '@/lib/auth/session';
 import { formatBytes, formatDateTime, formatRelative } from '@/lib/utils';
+import { MANUAL_EDIT_LABEL } from '@/types/domain';
 
 export const dynamic = 'force-dynamic';
 
@@ -38,6 +39,9 @@ export default async function LandingDetailPage({ params }: { params: Promise<{ 
   ]);
 
   const lastReview = reviews[0] ?? null;
+  // La version vigente la escribio una persona, no el modelo: el HTML ya no es el que produjo el prompt.
+  const currentVersion = versions.find((version) => version.version === landing.currentVersion);
+  const editedByHand = currentVersion?.label === MANUAL_EDIT_LABEL;
 
   return (
     <>
@@ -48,6 +52,7 @@ export default async function LandingDetailPage({ params }: { params: Promise<{ 
         actions={
           <>
             {landing.isMock ? <Badge tone="warn">generada en modo demo</Badge> : <Badge tone="accent">{landing.providerId}</Badge>}
+            {editedByHand ? <Badge tone="warn">editada a mano</Badge> : null}
             <Badge tone={landing.status === 'public' || landing.status === 'featured' ? 'ok' : 'neutral'}>
               {landing.status}
             </Badge>
@@ -57,7 +62,7 @@ export default async function LandingDetailPage({ params }: { params: Promise<{ 
 
       <PageBody>
         <div className="grid gap-5 xl:grid-cols-[1.6fr_1fr]">
-          <div className="grid gap-5">
+          <div className="grid min-w-0 gap-5">
             <LandingPreview html={landing.html} title={`Vista previa de ${landing.name}`} />
 
             {promptVersion ? (
@@ -68,13 +73,23 @@ export default async function LandingDetailPage({ params }: { params: Promise<{ 
                   description={promptVersion.changeNote}
                 />
                 <PanelBody className="space-y-3">
+                  {editedByHand ? (
+                    <div className="border border-warn/40 bg-warn-soft px-3 py-2 text-xs text-muted">
+                      Esta pagina se edito a mano despues de generarse: el HTML actual ya no es exactamente el que
+                      produjo este prompt. Las versiones anteriores siguen en el historial.
+                    </div>
+                  ) : null}
                   <DefinitionList
                     items={[
                       { term: 'Proveedor', value: landing.providerId },
                       { term: 'Modelo', value: landing.model || '—' },
                       {
                         term: 'Seed String',
-                        value: promptVersion.seedStringValue || 'sin Seed String',
+                        // Cadena hexadecimal larga y sin espacios: sin `break-all` ensancha toda
+                        // la columna y la pagina se desborda en pantallas estrechas.
+                        value: (
+                          <span className="break-all">{promptVersion.seedStringValue || 'sin Seed String'}</span>
+                        ),
                       },
                       { term: 'Creado', value: formatDateTime(promptVersion.createdAt) },
                     ]}

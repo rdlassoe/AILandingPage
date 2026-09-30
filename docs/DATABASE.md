@@ -137,6 +137,12 @@ Una Landing Page nunca queda separada de su prompt: guarda `prompt_id`,
 que la produjo, con su Seed String, sus restricciones negativas y los conflictos de stack
 que se resolvieron.
 
+Si el HTML vigente se editó a mano (`PUT /api/landings/[id]/html`), la cadena no cambia —la
+versión manual sigue apuntando a la misma `prompt_version`— pero ya no es cierto que ese prompt
+produjera *exactamente* ese HTML. La ficha lo indica con la insignia "editada a mano" cuando la
+versión vigente lleva la etiqueta `Edicion manual`; las versiones anteriores siguen en el
+historial. Esa función **no cambió el esquema**: no hace falta volver a ejecutar `db:setup`.
+
 ---
 
 ## Tablas
@@ -158,7 +164,7 @@ que se resolvieron.
 | `prompts` | Agrupador de versiones por proyecto. | `current_version` es el contador. |
 | `prompt_versions` | Texto inmutable enviado al modelo. | `unique (prompt_id, version)`. |
 | `landing_pages` | Página vigente. | `html` es el documento autocontenido. |
-| `landing_versions` | Historial completo. | `unique (landing_page_id, version)`. |
+| `landing_versions` | Historial completo: una por generación, refinamiento y **edición manual**. | `unique (landing_page_id, version)`. Las manuales llevan `label = 'Edicion manual'` y `generation_id` nulo; conservan la `prompt_version_id` del HTML del que partieron. |
 | `generations` | Observabilidad de cada llamada. | Proveedor, modelo, estado, latencia, tokens, avisos. **Nunca claves.** |
 | `generation_reviews` | Salida del Critic Engine. | Issues, sugerencias, puntuaciones y prompt de refinamiento. |
 | `llm_providers` / `llm_models` | Catálogo informativo. | La disponibilidad real la decide el servidor por las variables de entorno. |

@@ -86,6 +86,15 @@ const BUTTON_SIZES: Record<ButtonSize, string> = {
   md: 'h-9 px-3.5 text-sm',
 };
 
+/** Clases de un boton para otros elementos, como un `Link` de Next.js. */
+export function buttonClassName({
+  variant = 'secondary',
+  size = 'md',
+  className,
+}: { variant?: ButtonVariant; size?: ButtonSize; className?: string } = {}) {
+  return cn(BUTTON_BASE, BUTTON_VARIANTS[variant], BUTTON_SIZES[size], 'no-underline', className);
+}
+
 export interface ButtonProps extends ComponentPropsWithoutRef<'button'> {
   variant?: ButtonVariant;
   size?: ButtonSize;
@@ -255,16 +264,25 @@ export function Alert({
 }) {
   const { box, Icon } = ALERT_TONES[tone];
   return (
+    // En pantallas estrechas las acciones pasan debajo del texto (alineadas con el): si se
+    // quedaran a la derecha con `flex-none`, dos botones dejarian al texto una columna de
+    // una palabra por linea.
     <div
-      className={cn('flex items-start gap-2.5 border px-3 py-2.5 text-sm rounded-xs', box, className)}
+      className={cn(
+        'flex flex-col gap-2 border px-3 py-2.5 text-sm rounded-xs sm:flex-row sm:items-start sm:gap-2.5',
+        box,
+        className,
+      )}
       role={tone === 'danger' ? 'alert' : 'status'}
     >
-      <Icon className="mt-0.5 size-4 flex-none" aria-hidden="true" />
-      <div className="min-w-0 flex-1">
-        {title ? <p className="font-medium">{title}</p> : null}
-        {children ? <div className={cn(title && 'mt-0.5', 'text-muted')}>{children}</div> : null}
+      <div className="flex min-w-0 flex-1 items-start gap-2.5">
+        <Icon className="mt-0.5 size-4 flex-none" aria-hidden="true" />
+        <div className="min-w-0 flex-1">
+          {title ? <p className="font-medium">{title}</p> : null}
+          {children ? <div className={cn(title && 'mt-0.5', 'text-muted')}>{children}</div> : null}
+        </div>
       </div>
-      {actions ? <div className="flex-none">{actions}</div> : null}
+      {actions ? <div className="flex-none pl-[1.625rem] sm:pl-0">{actions}</div> : null}
     </div>
   );
 }

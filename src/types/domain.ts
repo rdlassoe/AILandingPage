@@ -377,6 +377,12 @@ export interface LandingVersion extends Timestamps {
   promptVersionId: string | null;
 }
 
+/**
+ * Etiqueta de la `landing_version` que crea el guardado desde el editor de
+ * codigo. La ficha la usa para marcar una pagina como "editada a mano".
+ */
+export const MANUAL_EDIT_LABEL = 'Edicion manual';
+
 /* -------------------------------------------------------------------------
  * Critic Engine
  * ---------------------------------------------------------------------- */

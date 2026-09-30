@@ -149,6 +149,20 @@
   }
 }
 
+/* Destello del rango al que salta el editor tras inspeccionar un elemento */
+.cm-ale-flash {
+  animation: ale-flash 1.4s ease-out;
+}
+
+@keyframes ale-flash {
+  from {
+    background-color: color-mix(in srgb, var(--warn) 50%, transparent);
+  }
+  to {
+    background-color: transparent;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

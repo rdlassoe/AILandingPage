@@ -27,6 +27,35 @@ Supabase se considera activo solo si **URL y anon key** están presentes. Si fal
 de las dos, la aplicación usa `LocalDataStore` (`./.data/db.json`) y lo indica en la barra
 lateral.
 
+### Forzar el modo local sin tocar `.env.local`
+
+Con claves de Supabase en `.env.local`, `npm run dev` arranca **en modo Supabase**: cuentas y
+datos reales. Para ejecutar o verificar la aplicación sin tocarlos, no edites ese archivo:
+Next.js da prioridad a los archivos específicos del entorno, así que basta crear uno que los
+sobrescriba con valores vacíos.
+
+| Archivo | Se lee con | Prioridad |
+| --- | --- | --- |
+| `.env.development.local` | `npm run dev` | sobre `.env.local` |
+| `.env.production.local` | `npm run build` / `npm run start` | sobre `.env.local` |
+| `.env.local` | todos | — |
+
+```env
+# .env.development.local  (temporal)
+NEXT_PUBLIC_SUPABASE_URL=
+NEXT_PUBLIC_SUPABASE_ANON_KEY=
+SUPABASE_SERVICE_ROLE_KEY=
+GEMINI_API_KEY=
+GROQ_API_KEY=
+DEFAULT_LLM_PROVIDER=mock
+```
+
+Con eso la aplicación usa el almacén local y el modo demo: no consume cuota ni crea cuentas.
+Ambos nombres están cubiertos por `.env*.local` en `.gitignore`. **Bórralo al terminar**: si se
+queda, tu servidor habitual también arrancará sin Supabase. Pasar las variables vacías por la
+línea de comandos no funcionó de forma fiable al lanzar el servidor desde un arrancador de
+procesos; esta vía sí. Más contexto en [`DEVELOPMENT.md`](DEVELOPMENT.md#contra-un-proveedor-real).
+
 ---
 
 ## Proveedores LLM

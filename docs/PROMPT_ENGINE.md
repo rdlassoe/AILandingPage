@@ -293,6 +293,13 @@ más arriba. `REFINE` y la generación de variantes vuelven a fundir ambos pasos
 llamada, porque parten de una `prompt_version` que ya existe (la de la Landing Page actual) y
 no hay nada nuevo que revisar antes de generar.
 
+Entre cualquier `GENERATE` y el `REVIEW` siguiente cabe un paso manual, `EDIT`: el usuario corrige
+el HTML en el editor de código —con el inspector, que lleva a la línea de cada elemento— y lo
+guarda como una `landing_version` más (`MANUAL_EDIT_LABEL`), sin pasar por el modelo. Desde ese
+momento es el HTML vigente: el crítico lo audita y el refinamiento parte de él. No crea una
+`prompt_version`, porque no hay un prompt nuevo: la versión manual conserva la del HTML del que
+partió. Ver la [decisión 11](ARCHITECTURE.md#11-editar-el-html-generado-e-inspeccionar-la-página-sin-relajar-el-sandbox).
+
 Cada vuelta crea una `prompt_version` y una `landing_version`. El historial permite
 comparar y volver atrás.
 

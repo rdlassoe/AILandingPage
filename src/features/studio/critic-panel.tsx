@@ -23,6 +23,8 @@ const SEVERITY_TONE: Record<CriticSeverity, 'danger' | 'warn' | 'accent' | 'neut
 
 const SEVERITY_ORDER: CriticSeverity[] = ['critical', 'high', 'medium', 'low'];
 
+const LOCKED_HINT = 'Guarda o descarta los cambios del codigo: esta accion trabaja sobre la version guardada.';
+
 export function CriticPanel({
   review,
   accepted,
@@ -35,6 +37,7 @@ export function CriticPanel({
   critiquing,
   onCritique,
   error,
+  locked = false,
 }: {
   review: GenerationReview | null;
   accepted: string[];
@@ -47,6 +50,8 @@ export function CriticPanel({
   critiquing: boolean;
   onCritique: () => void;
   error: string | null;
+  /** Hay cambios de codigo sin guardar: auditar y refinar operan sobre la version guardada, asi que se bloquean. */
+  locked?: boolean;
 }) {
   if (!review) {
     return (
@@ -56,7 +61,13 @@ export function CriticPanel({
           title="Auditoria de la pagina"
           description="Un segundo agente revisa UX, accesibilidad, jerarquia, responsive, CTA, copy y codigo antes de refinar."
           actions={
-            <Button variant="primary" onClick={onCritique} loading={critiquing}>
+            <Button
+              variant="primary"
+              onClick={onCritique}
+              loading={critiquing}
+              disabled={locked}
+              title={locked ? LOCKED_HINT : undefined}
+            >
               <ShieldCheck className="size-4" aria-hidden="true" />
               Auditar
             </Button>
@@ -86,7 +97,13 @@ export function CriticPanel({
         title="Auditoria de la pagina"
         description={`${review.issues.length} problemas detectados · ${review.suggestions.length} recomendaciones`}
         actions={
-          <Button size="sm" onClick={onCritique} loading={critiquing}>
+          <Button
+            size="sm"
+            onClick={onCritique}
+            loading={critiquing}
+            disabled={locked}
+            title={locked ? LOCKED_HINT : undefined}
+          >
             Volver a auditar
           </Button>
         }
@@ -205,7 +222,8 @@ export function CriticPanel({
               variant="primary"
               onClick={onRefine}
               loading={refining}
-              disabled={accepted.length === 0 && extraInstructions.trim().length === 0}
+              disabled={locked || (accepted.length === 0 && extraInstructions.trim().length === 0)}
+              title={locked ? LOCKED_HINT : undefined}
             >
               <Sparkles className="size-4" aria-hidden="true" />
               Refinar y regenerar

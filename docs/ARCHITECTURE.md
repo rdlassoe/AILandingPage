@@ -25,6 +25,7 @@ PostgreSQL o a un JSON en disco.
 │                       ├── OllamaProvider                     │
 │                       └── MockProvider                       │
 │    auth/ · validation/ · env · errors · rate-limit           │
+│    preview/ · instrumentación y runtime del inspector        │
 ├──────────────────────────────────────────────────────────────┤
 │  types/          Contratos compartidos                       │
 └──────────────────────────────────────────────────────────────┘
@@ -94,6 +95,9 @@ output-validator
         ▼
 Preview Engine: <iframe srcDoc sandbox>
         │
+        ├── Edición manual (opcional, ver decisión 11)
+        │     editor de código + inspector ──► PUT /api/landings/[id]/html
+        │     ──► nueva versión "Edicion manual", vigente desde ese momento
         ▼
 Critic Engine (a petición) ──► issues + sugerencias + puntuaciones
         │
@@ -187,7 +191,8 @@ sincroniza en el mismo método que escribe el proyecto.
 `allow-same-origin` corre en un origen opaco: puede ejecutar su propio JavaScript —lo que
 permite comprobar que los menús y los formularios funcionan de verdad— pero no puede leer
 cookies, `localStorage` ni acceder a la ventana padre. Nunca se usa
-`dangerouslySetInnerHTML` para la página completa.
+`dangerouslySetInnerHTML` para la página completa. El inspector de la decisión 11 se construyó
+respetando este aislamiento: no se le añadió `allow-same-origin`.
 
 ### 7. El refinamiento no reenvía el encargo entero
 
@@ -218,6 +223,11 @@ apunta a la versión concreta que la produjo.
 
 **Motivo.** La pregunta «¿qué prompt produjo esta página?» tiene que poder responderse
 siempre. También permite comparar versiones y reproducir una generación.
+
+**Edición manual.** Guardar HTML editado a mano (decisión 11) crea una `landing_version` pero
+**no** una `prompt_version`: no hay un prompt nuevo. La versión manual conserva la
+`prompt_version_id` del HTML del que partió, `generation_id` queda a `null`, y la ficha avisa de
+que el HTML vigente ya no es exactamente el que produjo ese prompt.
 
 ### 9. El prompt lo escribe un LLM, no solo el código
 
@@ -320,6 +330,71 @@ mismo `Prompt`, igual que ya hacía el camino sin `promptVersionId`.
    `composedByLLM: boolean` — `false` tanto en modo demo (esperado) como cuando un proveedor
    real falló y se usó el borrador (no esperado) — y el Prompt Studio avisa explícitamente en
    este segundo caso en vez de mostrar el borrador como si fuera un éxito.
+
+### 11. Editar el HTML generado e inspeccionar la página, sin relajar el sandbox
+
+**Decisión.** El HTML que produce el modelo se puede editar a mano en la propia aplicación y la
+vista previa tiene un modo **inspector**: un clic en un elemento lleva el editor a la etiqueta de
+ese elemento. Son dos piezas independientes:
+
+1. **Guardado** — `PUT /api/landings/[id]/html` → `saveManualEdit` (`landing-generator`).
+   Es un guardado real y definitivo: actualiza `landing_pages.html` **y** crea una
+   `landing_version` con la etiqueta `MANUAL_EDIT_LABEL`. Reglas: solo el propietario (`403`
+   también sobre páginas públicas de otra cuenta); el texto **no se normaliza** y un HTML que no
+   es un documento utilizable se rechaza con `422` en vez de "arreglarse" en silencio; guardar un
+   HTML idéntico no crea versión; `expectedVersion` desfasada responde `409`; la puntuación del
+   crítico (`metadata.criticScore`) se invalida porque era de otro HTML. La `promptVersionId` se
+   conserva, y la ficha marca la página como "editada a mano".
+2. **Inspector** — `src/lib/preview/`. Un script dentro del iframe avisa al padre por
+   `postMessage` de qué elemento se pulsó, y el padre lo traduce a una posición del código.
+
+**Motivo (por qué no `allow-same-origin`).** El padre no puede leer el DOM de un iframe sin
+`allow-same-origin`, y añadir ese permiso junto a `allow-scripts` deja que el documento generado
+(código no confiable, decisión 6) se quite el sandbox él mismo. El inspector consigue lo mismo
+sin tocar el aislamiento: corre *dentro* del iframe y solo se comunica por mensajes.
+
+**Motivo (cómo se llega a la línea).** Se parsea el HTML con `parse5` (construye el árbol igual
+que el navegador) y se inserta `data-ale-src="<posición>"` en cada etiqueta de apertura de una
+**copia** del documento, por manipulación de cadena a partir de las posiciones que da el parser.
+No se re-serializa el árbol (cambiaría el formato y con él las posiciones) ni se busca el
+`outerHTML` dentro del texto (falla con elementos repetidos, que son casi todos).
+
+**Contrato que hay que mantener.**
+
+- El HTML guardado y el exportado **nunca** llevan `data-ale-src` ni el script: solo el `srcDoc`.
+  Por eso `LandingPreview.html` sigue siendo el HTML limpio (es el que abre "Abrir en una pestaña
+  nueva") y solo se instrumenta por dentro.
+- Texto con `\n` de extremo a extremo. CodeMirror expone el documento con `\n`; si las posiciones
+  se calcularan sobre un texto con `\r\n`, el salto caería desplazado una posición por línea.
+- Lo que llega del iframe es **dato no confiable**: el documento generado corre en ese mismo
+  iframe y puede llamar a `parent.postMessage` igual que el inspector. `parseFrameMessage` solo
+  acepta el render actual (`rev`), posiciones enteras dentro del texto y cadenas acotadas.
+- `inspector-runtime.ts` debe ser **autocontenido**: se incrusta con `toString()`, así que no
+  puede usar nada de fuera de su cuerpo. `npm run verify:inspector` lo ejecuta en un contexto
+  `vm` sin acceso al módulo, y se comprobó también sobre el build minificado de producción.
+- **Guardar es explícito.** No hay autosave a la base de datos (cada guardado es una versión).
+  Lo no guardado existe solo en el navegador —como borrador en `localStorage`, recuperable tras
+  recargar— y el crítico, el refinamiento y las variantes se bloquean mientras haya cambios sin
+  guardar, porque operan sobre la versión guardada.
+
+**Alternativas.** `allow-same-origin` (descartada, ver arriba); buscar el elemento por
+`outerHTML` o por selector (ambiguo); Monaco como editor (varios MB y *workers* en webpack;
+CodeMirror 6 son ~300 KB cargados en diferido solo en las pantallas de edición).
+
+**Coste y límites conocidos.**
+
+- Un elemento que crea el JavaScript de la propia página no existe en el código: el inspector
+  devuelve el ancestro marcado más cercano y lo indica.
+- Si el HTML está minificado en una sola línea, "la línea" no ayuda: se selecciona la etiqueta y
+  se muestra la columna.
+- El runtime es un script en línea: si algún día se añade una CSP (hoy no hay ninguna en
+  `next.config.ts`) necesitará un `nonce`.
+- Un estilo incorrecto suele vivir en una regla de `<style>`, no en la etiqueta: localizar la
+  regla CSS que afecta a un elemento **no está implementado**; con clases de utilidad (Tailwind
+  por CDN) la etiqueta ya es el sitio correcto.
+- `PATCH /api/landings/[id]` ya **no** acepta `html`: había un esqueleto que nadie usaba, guardaba
+  un HTML vacío y no comprobaba el propietario. Todo el guardado de HTML pasa por la ruta nueva,
+  para que las reglas de arriba no puedan esquivarse.
 
 ---
 
