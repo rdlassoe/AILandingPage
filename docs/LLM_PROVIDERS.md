@@ -232,6 +232,87 @@ producción.
 
 ---
 
+## Generación de imágenes (Cloudflare Workers AI)
+
+La técnica de diseño «Generación de imágenes» genera imágenes **de verdad** con FLUX.1 schnell en
+Cloudflare Workers AI (capa gratuita) y las añade a la página. **No es un `LLMProvider`** y no se
+añadió a `ProviderId`: es un enum de Postgres (`provider_id`) que usan unos 28 ficheros y los
+selectores de proveedor, y Cloudflare no compite con Gemini o Groq —solo rellena los marcadores que
+deja el LLM—. Reutiliza el transporte de `postJson` (`src/lib/llm/http.ts`, con `provider` ampliado a
+`ErrorSource = ProviderId | 'cloudflare'`) y vive aparte: cliente en
+[`src/lib/images/cloudflare.ts`](../src/lib/images/cloudflare.ts), orquestación en
+[`src/services/image-generator`](../src/services/image-generator/index.ts). Cómo encaja en el flujo,
+qué se guarda y por qué la vista previa incrusta las imágenes: decisión 12 de
+[`ARCHITECTURE.md`](ARCHITECTURE.md).
+
+### La API
+
+```
+POST https://api.cloudflare.com/client/v4/accounts/{ACCOUNT_ID}/ai/run/@cf/black-forest-labs/flux-1-schnell
+Authorization: Bearer {TOKEN}
+{ "prompt": "…" (1-2048 caracteres), "steps": 4 (máx. 8) }
+→ { "success": true, "result": { "image": "<base64>" }, "errors": [], "messages": [] }
+```
+
+Token con permisos *Workers AI – Read* y *Edit* (guía:
+<https://developers.cloudflare.com/workers-ai/get-started/rest-api/>). schnell **no tiene
+`width`/`height` ni prompt negativo**: la salida es de tamaño fijo y por eso el prompt lleva siempre el
+sufijo `, no text, no letters, no logos, no watermark`, y la técnica pide al LLM contenedores con
+`aspect-ratio` y `object-fit: cover`.
+
+**Sin documentar, hay que medirlo:** formato y resolución de la imagen de salida. Nada se da por
+bueno: el cliente detecta PNG/JPEG/WebP por los primeros bytes (`src/lib/images/sniff.ts`), sirve la
+imagen con ese tipo —nunca con el que diga el proveedor— y rechaza lo que no lo sea o pase de 5 MB.
+`npm run verify:cloudflare` lo mide contra la API real (2 imágenes, unas decenas de neuronas).
+
+### Errores
+
+El cliente hace **un intento**; los reintentos y la política de cuota viven en el servicio.
+
+| Código propio | Cuándo | Reintento |
+| --- | --- | --- |
+| `quota` | HTTP 429 con código `3036` (el documentado) o `4006` (el que devuelve hoy la API). | No. Abre el freno de cuota. |
+| `busy` | HTTP 429 con otro código, p. ej. `3040` (capacidad temporal). | Sí, una vez (2,5 s). |
+| `server` | 5xx. | Sí, una vez (3 s). |
+| `timeout` / `network` | Sin respuesta a tiempo / sin conexión. | Sí, una vez (1 s). |
+| `auth` | 401/403 (`5018`, `5035`…). | No. |
+| `invalid_request` | 400/422. | No. |
+| `invalid_image` | 200 sin imagen, base64 roto, formato no admitido o demasiado grande. | No. |
+| `not_configured` / `cancelled` | Faltan credenciales / se canceló. | No. |
+
+### Cuota y frenos
+
+- Capa gratuita: **10 000 neuronas al día** (reinicio 00:00 UTC) y 720 peticiones por minuto. Al
+  agotarla, las operaciones fallan con 429. Coste de schnell según la página de precios: 4,8
+  neuronas por tesela de 512×512 más 9,6 por paso → ~43 neuronas (≈230 imágenes) a 512² y ~58
+  (≈170) a 1024², a 4 pasos.
+- **Riesgo conocido de la plataforma:** hay reportes de 429/`4006` que **persisten después del
+  reinicio de las 00:00 UTC con el panel de Cloudflare en 0/10 000**. Por eso el freno de cuota
+  (`src/lib/images/limits.ts`) dura `IMAGE_QUOTA_COOLDOWN_MS` (10 min) y los mensajes nunca prometen
+  «se reinicia a medianoche».
+- Cuatro limitadores en memoria de proceso, con su propio cubo (no gastan el límite de llamadas al
+  LLM ni al revés): **freno de cuota** (global: la cuota es de la cuenta de Cloudflare, no de un
+  usuario), **freno de almacenamiento**, **imágenes por usuario y hora**
+  (`IMAGE_RATE_LIMIT_PER_HOUR`) y **plazo del paso** (`IMAGE_STEP_BUDGET_MS`, acotado por el
+  `maxDuration` de 120 s de la ruta). Con varias instancias harían falta Redis o una tabla.
+- **Freno de almacenamiento.** Si una imagen se genera pero **no se puede guardar** (en Supabase:
+  falta la tabla `landing_images` o el bucket `landing-images` porque no se ejecutó `npm run
+  db:setup`, o hay un problema de políticas), cada intento posterior gastaría ~58 neuronas para tirar
+  la imagen. Al primer fallo se abre un freno de `IMAGE_STORAGE_COOLDOWN_MS` (60 s): no se vuelve a
+  llamar a Cloudflare y el aviso dice **qué** falta (`describeStorageError` reconoce bucket, tabla y
+  políticas) en lugar de un genérico «no se pudo guardar». Lo que ya estaba en vuelo (hasta 2
+  imágenes) sí se gasta. Es corto a propósito: en cuanto se arregla el almacén, el siguiente intento
+  debe poder salir bien.
+
+### Probar sin gastar cuota
+
+`scripts/stub-cloudflare.mjs` imita la API (éxito, cuota, saturación, 5xx, credenciales, respuesta que no es imagen, PNG enorme, lentitud, «falla dos veces»). Se elige el
+comportamiento con una palabra clave en el prompt (`__quota__`, `__busy_once__`…, ver la cabecera del
+script). Es lo que usan `npm run verify:images` y `npm run verify:images-flow`; la app lo usa con
+`CLOUDFLARE_API_BASE_URL=http://localhost:8788`. Ver [`DEVELOPMENT.md`](DEVELOPMENT.md).
+
+---
+
 ## Normalización
 
 Los proveedores no responden igual, así que cada adaptador traduce su respuesta a

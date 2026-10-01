@@ -157,7 +157,20 @@ function resolveOptions(prompt: string, currentHtml: string): MockLandingOptions
     illustration:
       present(/class=["']hero__diagram["']/i) || asked(/diagrama|ilustracion|apoyo visual/i),
     favicon: present(/rel=["']icon["']/i) || asked(/favicon|theme-color/i),
+    // La imagen la genera el servidor (Cloudflare), no el demo: aqui solo se deja
+    // el marcador cuando el prompt pide la tecnica, y se conserva el que ya hubiera.
+    imageSlot: asked(/data-ai-image/),
+    keptImage: firstImageSlotTag(currentHtml),
   };
+}
+
+/** Primera etiqueta `<img ... data-ai-image ...>` del HTML, tal cual estaba escrita. */
+function firstImageSlotTag(html: string): string | null {
+  if (!html.includes('data-ai-image')) return null;
+  for (const match of html.matchAll(/<img\b(?:[^>"']|"[^"]*"|'[^']*')*>/gi)) {
+    if (/\sdata-ai-image\s*=/i.test(match[0])) return match[0];
+  }
+  return null;
 }
 
 function capitalize(value: string): string {

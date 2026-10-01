@@ -1,6 +1,7 @@
 import type {
   Generation,
   GenerationReview,
+  LandingImage,
   LandingPage,
   LandingStatus,
   LandingVersion,
@@ -49,6 +50,11 @@ export type NewLandingVersion = Omit<
 >;
 
 export type NewGenerationReview = Omit<GenerationReview, 'id' | 'ownerId' | 'createdAt' | 'updatedAt'>;
+
+/** Metadatos + los bytes de la imagen (que no forman parte de `LandingImage`). */
+export type NewLandingImage = Omit<LandingImage, 'id' | 'ownerId' | 'createdAt' | 'bytes'> & {
+  data: Uint8Array;
+};
 
 /* -------------------------------------------------------------------------
  * Filtros
@@ -171,6 +177,15 @@ export interface DataStore {
 
   listLandingVersions(userId: string, landingPageId: string): Promise<LandingVersion[]>;
   createLandingVersion(userId: string, input: NewLandingVersion): Promise<LandingVersion>;
+
+  /**
+   * Imagenes generadas con IA. Guarda los bytes aparte del HTML y devuelve los
+   * metadatos, con el `id` que el HTML referencia. La LECTURA no pasa por
+   * aqui: `/api/landing-images/[id]` la sirve sin sesion (ver
+   * `local-store.ts` / el bucket publico de Supabase), porque el iframe de la
+   * vista previa es un origen opaco que no envia cookies.
+   */
+  saveLandingImage(userId: string, input: NewLandingImage): Promise<LandingImage>;
 
   /* Revisiones del Critic Engine */
   listReviews(userId: string, landingPageId: string): Promise<GenerationReview[]>;

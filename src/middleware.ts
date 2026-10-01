@@ -44,8 +44,10 @@ export async function middleware(request: NextRequest) {
 export const config = {
   matcher: [
     /*
-     * Todas las rutas salvo estaticos e imagenes.
+     * Todas las rutas salvo estaticos e imagenes. `api/landing-images` tambien:
+     * es publica (sin sesion) y cada landing pide varias; renovar el token de
+     * Supabase en cada una no aporta nada.
      */
-    '/((?!_next/static|_next/image|favicon.ico|.*\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)',
+    '/((?!_next/static|_next/image|favicon.ico|api/landing-images/|.*\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)',
   ],
 };

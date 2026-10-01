@@ -24,6 +24,7 @@ alter table landing_pages        enable row level security;
 alter table landing_versions     enable row level security;
 alter table generations          enable row level security;
 alter table generation_reviews   enable row level security;
+alter table landing_images       enable row level security;
 alter table llm_providers        enable row level security;
 alter table llm_models           enable row level security;
 
@@ -175,3 +176,33 @@ create policy "generation_reviews_all_own" on generation_reviews
   for all to authenticated
   using (owner_id = auth.uid())
   with check (owner_id = auth.uid());
+
+-- ---------------------------------------------------------------------------
+-- landing_images: metadatos propios + bucket de Storage
+--
+-- Los metadatos son privados como cualquier otra fila. Los BYTES estan en un
+-- bucket publico (lectura sin sesion: ver schema.sql); aqui solo se limita
+-- quien puede escribir y borrar en el.
+-- ---------------------------------------------------------------------------
+
+drop policy if exists "landing_images_all_own" on landing_images;
+create policy "landing_images_all_own" on landing_images
+  for all to authenticated
+  using (owner_id = auth.uid())
+  with check (owner_id = auth.uid());
+
+-- Con guarda: sin el esquema `storage` (PostgreSQL sin Supabase) no hay nada que proteger.
+-- Borrar solo lo propio: `owner_id` lo rellena el propio Storage con el usuario de la subida.
+do $$ begin
+  if to_regclass('storage.objects') is not null then
+    drop policy if exists "landing_images_storage_insert" on storage.objects;
+    create policy "landing_images_storage_insert" on storage.objects
+      for insert to authenticated
+      with check (bucket_id = 'landing-images');
+
+    drop policy if exists "landing_images_storage_delete_own" on storage.objects;
+    create policy "landing_images_storage_delete_own" on storage.objects
+      for delete to authenticated
+      using (bucket_id = 'landing-images' and owner_id = (select auth.uid())::text);
+  end if;
+end $$;

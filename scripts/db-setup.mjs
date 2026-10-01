@@ -40,6 +40,7 @@ const EXPECTED_TABLES = [
   'landing_versions',
   'generations',
   'generation_reviews',
+  'landing_images',
   'llm_providers',
   'llm_models',
 ];
@@ -232,6 +233,17 @@ async function inspect(client) {
     `select count(*)::int as total from pg_policies where schemaname = 'public'`,
   );
 
+  // El bucket de imagenes vive en el esquema `storage`, que solo existe en Supabase.
+  let imagesBucket = null;
+  try {
+    const { rows: buckets } = await client.query(
+      `select public from storage.buckets where id = 'landing-images'`,
+    );
+    imagesBucket = buckets[0] ? { public: buckets[0].public === true } : { missing: true };
+  } catch {
+    imagesBucket = null;
+  }
+
   const counts = {};
   const presentTables = new Set(tables.map((r) => r.table_name));
   for (const table of ['technologies', 'prompt_templates', 'llm_models']) {
@@ -245,6 +257,7 @@ async function inspect(client) {
     enums: new Set(enums.map((r) => r.typname)),
     rlsDisabled: rls.filter((r) => !r.relrowsecurity).map((r) => r.relname),
     policies: policies[0].total,
+    imagesBucket,
     counts,
   };
 }
@@ -273,12 +286,21 @@ function report(state) {
     fail(`RLS desactivado en: ${state.rlsDisabled.join(', ')}`);
   }
 
-  if (state.policies >= 22) {
+  if (state.policies >= 23) {
     ok(`${state.policies} politicas RLS definidas`);
   } else if (state.policies > 0) {
-    warn(`${state.policies} politicas RLS (se esperaban 22 o mas)`);
+    warn(`${state.policies} politicas RLS (se esperaban 23 o mas)`);
   } else {
     fail('Sin politicas RLS');
+  }
+
+  // No es fatal: sin bucket solo falla la tecnica "Generacion de imagenes".
+  if (state.imagesBucket?.missing) {
+    warn('Falta el bucket `landing-images` de Storage: las imagenes generadas no se podran guardar (vuelve a ejecutar db:setup o creelo, publico, en el panel de Supabase)');
+  } else if (state.imagesBucket && state.imagesBucket.public === false) {
+    warn('El bucket `landing-images` no es publico: la vista previa (iframe sandbox sin cookies) no podra mostrar las imagenes');
+  } else if (state.imagesBucket) {
+    ok('Bucket publico `landing-images` presente');
   }
 
   const seeded =

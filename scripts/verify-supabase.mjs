@@ -141,7 +141,7 @@ try {
       group by table_name order by table_name`,
   );
   const granted = new Map(grants.map((r) => [r.table_name, r.privs]));
-  const needed = ['projects', 'prompts', 'prompt_versions', 'landing_pages', 'landing_versions', 'generations', 'generation_reviews', 'profiles', 'technologies', 'project_technologies'];
+  const needed = ['projects', 'prompts', 'prompt_versions', 'landing_pages', 'landing_versions', 'generations', 'generation_reviews', 'landing_images', 'profiles', 'technologies', 'project_technologies'];
   const missing = needed.filter((t) => !(granted.get(t) ?? '').includes('SELECT'));
   check(
     missing.length === 0,

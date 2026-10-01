@@ -15,6 +15,9 @@
     "verify:flow": "node scripts/verify-flow.mjs",
     "verify:inspector": "node --experimental-strip-types --no-warnings scripts/verify-inspector.mjs",
     "verify:prompt": "node --experimental-strip-types --no-warnings scripts/verify-prompt-techniques.mjs",
+    "verify:images": "node --experimental-strip-types --no-warnings scripts/verify-images.mjs",
+    "verify:images-flow": "node scripts/verify-images-flow.mjs",
+    "verify:cloudflare": "node --env-file-if-exists=.env.local --experimental-strip-types --no-warnings scripts/verify-cloudflare-image.mjs",
     "verify:supabase": "node --env-file-if-exists=.env.local scripts/verify-supabase.mjs"
   },
   "dependencies": {

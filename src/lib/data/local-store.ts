@@ -15,6 +15,7 @@ import type {
   LandingPagePatch,
   NewGeneration,
   NewGenerationReview,
+  NewLandingImage,
   NewLandingPage,
   NewLandingVersion,
   NewProject,
@@ -28,10 +29,14 @@ import type {
   TechnologyPatch,
 } from './types';
 import { forbidden, notFound } from '@/lib/errors';
+import { IMAGE_EXTENSIONS } from '@/lib/images/constants';
+import { isImageId } from '@/lib/images/slots';
 import { newId, nowIso } from '@/lib/utils';
 import type {
   Generation,
   GenerationReview,
+  LandingImage,
+  LandingImageMime,
   LandingPage,
   LandingVersion,
   Profile,
@@ -76,10 +81,42 @@ interface LocalDb {
   landingPages: LandingPage[];
   landingVersions: LandingVersion[];
   reviews: GenerationReview[];
+  /** Solo metadatos: los bytes van a `.data/images/<id>.<ext>`, no a este JSON. */
+  landingImages: LandingImage[];
 }
 
 const DB_DIR = path.join(process.cwd(), '.data');
 const DB_FILE = path.join(DB_DIR, 'db.json');
+const IMAGES_DIR = path.join(DB_DIR, 'images');
+
+/**
+ * Lectura de una imagen generada por su id, SIN sesion ni propietario: el id
+ * (uuid v4) es la capacidad de lectura, porque el iframe sandbox de la vista
+ * previa no envia cookies. Solo la usa `GET /api/landing-images/[id]`; por eso
+ * no forma parte de `DataStore`, cuyos metodos reciben todos `ownerId`.
+ *
+ * `isImageId` va primero: un `../` nunca llega a `fs`.
+ */
+export async function readLocalImage(id: string): Promise<{ data: Buffer; mime: LandingImageMime } | null> {
+  if (!isImageId(id)) return null;
+  for (const [mime, extension] of Object.entries(IMAGE_EXTENSIONS)) {
+    try {
+      const data = await fs.readFile(path.join(IMAGES_DIR, `${id.toLowerCase()}.${extension}`));
+      return { data, mime: mime as LandingImageMime };
+    } catch {
+      // prueba la siguiente extension
+    }
+  }
+  return null;
+}
+
+async function removeLocalImageFile(image: LandingImage): Promise<void> {
+  try {
+    await fs.unlink(path.join(IMAGES_DIR, `${image.id}.${IMAGE_EXTENSIONS[image.mime]}`));
+  } catch {
+    // ya no estaba: nada que limpiar
+  }
+}
 
 function emptyDb(): LocalDb {
   const ts = nowIso();
@@ -95,6 +132,7 @@ function emptyDb(): LocalDb {
     landingPages: [],
     landingVersions: [],
     reviews: [],
+    landingImages: [],
   };
 }
 
@@ -307,7 +345,11 @@ export class LocalDataStore implements DataStore {
     db.projects = db.projects.filter((p) => p.id !== id);
     db.prompts = db.prompts.filter((p) => p.projectId !== id);
     db.landingPages = db.landingPages.filter((l) => l.projectId !== id);
+    // En Supabase lo hace `on delete cascade`; aqui hay ademas ficheros que borrar.
+    const orphanImages = db.landingImages.filter((image) => image.projectId === id);
+    db.landingImages = db.landingImages.filter((image) => image.projectId !== id);
     await persist(db);
+    await Promise.all(orphanImages.map(removeLocalImageFile));
   }
 
   /* --------------------------------------------------------------- Prompts */
@@ -579,6 +621,31 @@ export class LocalDataStore implements DataStore {
     landing.updatedAt = ts;
     await persist(db);
     return version;
+  }
+
+  /* --------------------------------------------------------------- Imagenes */
+
+  async saveLandingImage(userId: string, input: NewLandingImage): Promise<LandingImage> {
+    const db = await loadDb();
+    const project = db.projects.find((p) => p.id === input.projectId);
+    if (!project) throw notFound('ese proyecto');
+    assertOwner(userId, project.ownerId);
+
+    const { data, ...metadata } = input;
+    const image: LandingImage = {
+      ...metadata,
+      id: newId(),
+      ownerId: userId,
+      bytes: data.byteLength,
+      createdAt: nowIso(),
+    };
+
+    // Primero el fichero y despues la fila: una fila sin fichero seria una imagen rota.
+    await fs.mkdir(IMAGES_DIR, { recursive: true });
+    await fs.writeFile(path.join(IMAGES_DIR, `${image.id}.${IMAGE_EXTENSIONS[image.mime]}`), data);
+    db.landingImages.push(image);
+    await persist(db);
+    return image;
   }
 
   /* ------------------------------------------------------------- Revisiones */

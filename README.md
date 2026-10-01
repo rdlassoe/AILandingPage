@@ -43,6 +43,7 @@ Groq ni Ollama.
 | **Prompt Composer** | Combina varias tecnologías, detecta conflictos y resuelve prioridades. |
 | **LLM Orchestrator** | Punto único de contacto con los modelos: proveedor, modelo, timeout, reintento único, límite de uso. |
 | **Output Validator** | Normaliza y valida la respuesta antes de mostrarla. No se confía en el modelo. |
+| **Image Generator** | Con la técnica «Generación de imágenes», rellena los marcadores `<img data-ai-image>` del HTML con FLUX (Cloudflare Workers AI). Las imágenes se guardan aparte y el HTML solo lleva una URL corta; lo que falle queda como marcador y se reintenta. |
 | **Preview Engine** | `iframe` + `srcDoc` con sandbox de origen opaco. Con el inspector activo, un clic en un elemento lleva el editor a su línea. |
 | **Code Editor** | Edita el HTML generado a mano (CodeMirror) y lo guarda como una versión nueva. Guardar es explícito; lo no guardado es un borrador local. |
 | **Critic Engine** | Agente crítico que audita UX, accesibilidad, jerarquía, responsive, CTA, copy y código. |
@@ -167,6 +168,26 @@ npm run verify:flow -- --provider=ollama
 > (modelos `thinking` como `qwen3`). Detalle y cuotas en
 > [`docs/LLM_PROVIDERS.md`](docs/LLM_PROVIDERS.md).
 
+### 4. Imágenes generadas con IA (opcional)
+
+La técnica de diseño **«Generación de imágenes»** genera imágenes reales con FLUX.1 schnell en
+Cloudflare Workers AI (capa gratuita: 10 000 neuronas al día, de unas 170 a 230 imágenes) y las añade a
+la página. Funciona con cualquier proveedor de texto, también con el modo demo.
+
+```env
+# Panel de Cloudflare -> Workers AI -> "Use REST API" -> Create a Workers AI API Token
+# (permisos Workers AI Read y Edit) y el Account ID.
+CLOUDFLARE_ACCOUNT_ID=...
+CLOUDFLARE_API_TOKEN=...
+```
+
+Sin esas dos variables la técnica sigue disponible, pero deja marcadores con la descripción de cada
+imagen y el Prompt Studio lo avisa. Si una imagen falla (cuota, tiempo, filtro), la página se guarda
+igualmente y **«Reintentar imágenes»** completa solo las pendientes. Compruébalo contra tu cuenta con
+`npm run verify:cloudflare` (genera 2 imágenes). Detalle, límites y errores en
+[`docs/LLM_PROVIDERS.md`](docs/LLM_PROVIDERS.md#generación-de-imágenes-cloudflare-workers-ai) y
+[decisión 12](docs/ARCHITECTURE.md).
+
 ---
 
 ## Flujo de trabajo
@@ -273,6 +294,9 @@ npm run seed:sql    # regenerar supabase/seed.sql desde el catálogo
 npm run verify:flow # recorrido de aceptación de punta a punta (con el server arrancado)
 npm run verify:inspector # instrumentación del inspector y mensajes del iframe (sin servidor)
 npm run verify:prompt # el prompt lleva solo las técnicas elegidas, con y sin LLM (sin servidor ni claves)
+npm run verify:images # imágenes: marcadores, cliente, pipeline y env contra un Cloudflare simulado (sin servidor ni cuota)
+npm run verify:images-flow # imágenes de extremo a extremo contra el servidor y el stub (ver docs/DEVELOPMENT.md)
+npm run verify:cloudflare # MANUAL: 2 imágenes reales contra Cloudflare (gasta unas decenas de neuronas)
 ```
 
 ---

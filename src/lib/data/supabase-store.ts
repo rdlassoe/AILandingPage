@@ -4,6 +4,7 @@ import type { PostgrestError, SupabaseClient } from '@supabase/supabase-js';
 
 import {
   fromGeneration,
+  fromLandingImage,
   fromLandingPage,
   fromLandingVersion,
   fromProject,
@@ -12,6 +13,7 @@ import {
   fromReview,
   fromTechnology,
   toGeneration,
+  toLandingImage,
   toLandingPage,
   toLandingVersion,
   toProfile,
@@ -32,6 +34,7 @@ import type {
   LandingPagePatch,
   NewGeneration,
   NewGenerationReview,
+  NewLandingImage,
   NewLandingPage,
   NewLandingVersion,
   NewProject,
@@ -45,10 +48,12 @@ import type {
   TechnologyPatch,
 } from './types';
 import { AppException, notFound } from '@/lib/errors';
-import { slugify } from '@/lib/utils';
+import { IMAGES_BUCKET } from '@/lib/images/constants';
+import { newId, slugify } from '@/lib/utils';
 import type {
   Generation,
   GenerationReview,
+  LandingImage,
   LandingPage,
   LandingVersion,
   Profile,
@@ -532,6 +537,41 @@ export class SupabaseDataStore implements DataStore {
       .eq('owner_id', userId);
 
     return toLandingVersion(data as Row);
+  }
+
+  /* ------------------------------------------------------------- Imagenes */
+
+  /**
+   * Bytes al bucket publico (clave = id) y metadatos a `landing_images`. La
+   * subida va con el cliente del usuario: la politica de `storage.objects`
+   * (ver `supabase/policies.sql`) solo deja escribir en este bucket.
+   */
+  async saveLandingImage(userId: string, input: NewLandingImage): Promise<LandingImage> {
+    const { data, ...metadata } = input;
+    const id = newId();
+
+    const uploaded = await this.db.storage.from(IMAGES_BUCKET).upload(id, data, {
+      contentType: input.mime,
+      upsert: false,
+      cacheControl: '31536000',
+    });
+    if (uploaded.error) {
+      throw new AppException({
+        code: 'storage_error',
+        message: 'No pudimos guardar la imagen.',
+        detail: uploaded.error.message,
+        retryable: true,
+      });
+    }
+
+    const payload = fromLandingImage({ ...metadata, id, ownerId: userId, bytes: data.byteLength });
+    const { data: row, error } = await this.db.from('landing_images').insert(payload).select('*').single();
+    if (error) {
+      // Sin fila no hay quien vuelva a referenciar el objeto: se retira para no dejar huerfanos.
+      await this.db.storage.from(IMAGES_BUCKET).remove([id]);
+      this.fail(error, 'registrar la imagen');
+    }
+    return toLandingImage(row as Row);
   }
 
   /* ------------------------------------------------------------ Revisiones */

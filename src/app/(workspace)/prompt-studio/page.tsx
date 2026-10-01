@@ -5,6 +5,7 @@ import { PageBody, PageHeader } from '@/components/layout/page-header';
 import { PromptStudio } from '@/features/studio/prompt-studio';
 import { Spinner } from '@/components/ui';
 import { requireContext } from '@/lib/auth/session';
+import { getRuntimeConfigSummary } from '@/lib/env';
 import { getProviderSummaries } from '@/lib/llm/registry';
 import { DESIGN_TECHNIQUES, DEFAULT_TECHNIQUE_IDS } from '@/services/prompt-engine';
 
@@ -30,6 +31,7 @@ export default async function PromptStudioPage() {
             providers={providers}
             techniques={DESIGN_TECHNIQUES}
             defaultTechniqueIds={DEFAULT_TECHNIQUE_IDS}
+            imageGenerationConfigured={getRuntimeConfigSummary().imageGeneration.configured}
           />
         </Suspense>
       </PageBody>

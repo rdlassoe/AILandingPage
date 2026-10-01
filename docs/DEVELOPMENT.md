@@ -19,6 +19,9 @@ npm run seed:sql     # regenera supabase/seed.sql desde el catálogo
 npm run verify:flow  # recorrido de aceptación contra el servidor de desarrollo
 npm run verify:inspector  # instrumentación del inspector y mensajes del iframe (sin servidor)
 npm run verify:prompt     # el prompt lleva solo las técnicas elegidas, con y sin LLM (sin servidor ni claves)
+npm run verify:images     # marcadores, cliente de Cloudflare, pipeline y env, contra el stub (sin servidor ni cuota)
+npm run verify:images-flow  # recorrido real de las imágenes contra el servidor y el stub (ver más abajo)
+npm run verify:cloudflare # MANUAL: 2 imágenes reales contra Cloudflare (gasta unas decenas de neuronas)
 npm run verify:supabase  # esquema, RLS y mappers contra la base real
 ```
 
@@ -341,6 +344,75 @@ recorrido por la API real (`POST /api/prompts/compose` con `[]` y con una técni
 Para ejecutar más módulos de `src/` de esta forma basta importarlos desde un script que registre
 el hook; ojo con `@/services/llm-orchestrator`, que el hook sustituye siempre por el stub.
 
+### Imágenes generadas con IA
+
+Tres niveles, de menos a más real. Ninguno gasta cuota salvo el último.
+
+```bash
+npm run verify:images          # módulos reales + stub de Cloudflare, sin servidor
+npm run verify:images-flow     # servidor real + stub: el recorrido completo
+npm run verify:cloudflare      # MANUAL, API real de Cloudflare (2 imágenes)
+```
+
+**`verify:images`** levanta `scripts/stub-cloudflare.mjs` en un puerto libre y ejecuta los módulos
+de `src/lib/images` y `src/services/image-generator`. Comprueba: formato y dimensiones por los
+primeros bytes (PNG, JPEG, WebP; un SVG o un GIF se rechazan); los marcadores (se localizan solo los
+`<img data-ai-image>`, el empalme deja el resto **byte a byte** igual, es idempotente, sobrevive a
+CRLF y rechaza posiciones obsoletas); el cliente ante cada fallo (cuota 4006 y 3036, saturación,
+5xx, credenciales, respuesta que no es imagen, imagen de más de 5 MB, timeout, cancelación); el
+pipeline (éxito, fallos parciales con bloque neutro, reintento que solo pide lo pendiente, freno de
+cuota, sin credenciales, tope por página, presupuesto por hora, sin tiempo, almacén caído, error
+inesperado); y `env.ts` arrancando **con y sin** las variables, en procesos hijo.
+
+**`verify:images-flow`** necesita el stub y un servidor en modo local con el demo como proveedor de
+texto (el demo deja el marcador y el servidor lo rellena llamando al stub: es el mismo camino que con
+Gemini o Groq):
+
+```bash
+node scripts/stub-cloudflare.mjs                       # terminal 1
+```
+
+```env
+# .env.development.local  (temporal; ver docs/ENVIRONMENT.md)
+NEXT_PUBLIC_SUPABASE_URL=
+NEXT_PUBLIC_SUPABASE_ANON_KEY=
+DEFAULT_LLM_PROVIDER=mock
+CLOUDFLARE_API_BASE_URL=http://localhost:8788
+CLOUDFLARE_ACCOUNT_ID=stub-account
+CLOUDFLARE_API_TOKEN=stub-token
+```
+
+```bash
+npm run dev                                            # terminal 2
+npm run verify:images-flow                             # terminal 3
+```
+
+Usa su propia cuenta (`e2e-images@estudio.test`), así que no exige una base vacía como `verify:flow`.
+Comprueba que el prompt pide marcadores; que la generación los resuelve con una URL corta y sin
+bytes en el HTML; que la imagen se sirve **sin cookie** y que `../` o un uuid desconocido dan 404;
+que un fallo no tumba la generación, deja un marcador visible y llega como aviso; que
+«Reintentar imágenes» lo completa creando la versión «Imagenes»; y que refinar y el guardado
+manual aceptan el HTML con las URLs. Para cambiar el resultado de una imagen se usa una palabra
+clave en el tema del proyecto (`__fail_twice__`, `__quota__`…, ver la cabecera del stub).
+
+**Lo que un script no cubre y se comprobó a mano en un navegador** (receta de modo local):
+
+- *La imagen se ve dentro del iframe sandbox.* Hallazgo clave: desde el origen opaco las peticiones
+  a `localhost` se bloquean (ni un `fetch` `no-cors` sale), así que la vista previa **incrusta** las
+  imágenes como `data:`. Para comprobarlo sin fiarse del aspecto, crea un iframe con el mismo
+  `sandbox` y el `srcdoc` real, y mide `naturalWidth` por `postMessage` (con `loading="eager"`:
+  una imagen `lazy` aún no ha cargado al medir). Control imprescindible: un `data:` válido debe
+  cargar, o la prueba no prueba nada.
+- La biblioteca (miniaturas `sandbox=""`), la ficha («Imágenes 1/1», «Reintentar imágenes»,
+  descargar y copiar con imágenes incrustadas) y el panel de Ajustes.
+
+**`verify:cloudflare`** es la única prueba contra la API real: mide formato y **resolución** de la
+salida de schnell (no documentados), la latencia y las neuronas estimadas por imagen, y guarda las
+imágenes en `.data/cloudflare-spike/`. Necesita `CLOUDFLARE_ACCOUNT_ID` y `CLOUDFLARE_API_TOKEN` en
+`.env.local`; sin ellas, explica cómo conseguirlos y sale con código 2. **Aún no se ha ejecutado con
+credenciales reales**: todo lo demás se verificó contra el stub, que imita la documentación de
+Cloudflare, no la API.
+
 ### Editor de código e inspector
 
 ```bash
@@ -460,6 +532,23 @@ Aplicada tanto a la aplicación como a lo que genera:
   se rechaza. La detección es por frases, no semántica: una paráfrasis no se detecta. Y se
   comprobó con respuestas simuladas, no con un modelo real. Detalle en
   [`PROMPT_ENGINE.md`](PROMPT_ENGINE.md#con-el-llm-qué-se-garantiza-y-qué-no).
+- **Imágenes generadas** (decisión 12):
+  - La cuota gratuita de Cloudflare (10 000 neuronas/día, ~170-230 imágenes) es de la cuenta y hay
+    reportes de 429/`4006` que persisten tras el reinicio de las 00:00 UTC. Resolución y formato de
+    schnell: por medir (`verify:cloudflare`).
+  - La generación es una sola petición: no hay progreso por imagen (haría falta streaming), y el
+    paso de imágenes tiene un plazo de 45 s; lo que no quepa queda pendiente y se reintenta.
+  - Solo se generan los marcadores del HTML en la generación inicial; refinar y variar conservan
+    las imágenes pero no generan ni regeneran, y no se puede regenerar una imagen suelta.
+  - Las URLs `/api/landing-images/<uuid>` son públicas (el `uuid` es la capacidad de lectura).
+  - Las vistas que pintan el HTML en un iframe sandbox **deben incrustar** las imágenes
+    (`useInlinedImages`): una URL relativa no carga desde el origen opaco en `localhost`. Si añades
+    otra vista con `srcDoc`, úsalo.
+  - **Con Supabase, hay que ejecutar `npm run db:setup` antes de usar la técnica** (crea la tabla
+    `landing_images` y el bucket). Sin ello Cloudflare genera la imagen pero no se puede guardar:
+    el aviso lo dice y se frena la generación 60 s para no gastar neuronas. `npm run db:check` lo
+    diagnostica sin escribir nada. Las políticas de Storage no se han probado contra tu base (ver
+    [`DATABASE.md`](DATABASE.md)).
 - **Editor de código e inspector** (decisión 11):
   - No localiza la **regla CSS** que afecta a un elemento, solo su etiqueta. Un estilo
     incorrecto suele vivir en un `<style>`, no en la etiqueta: hoy hay que buscarlo en el editor

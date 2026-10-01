@@ -3,6 +3,7 @@ import 'server-only';
 import type {
   Generation,
   GenerationReview,
+  LandingImage,
   LandingPage,
   LandingVersion,
   Profile,
@@ -299,6 +300,37 @@ export const fromLandingVersion = (version: Partial<LandingVersion>): Row => pru
   label: version.label,
   generation_id: version.generationId,
   prompt_version_id: version.promptVersionId,
+});
+
+export const toLandingImage = (row: Row): LandingImage => ({
+  id: str(row.id),
+  ownerId: str(row.owner_id),
+  projectId: str(row.project_id),
+  generationId: nullableStr(row.generation_id),
+  prompt: str(row.prompt),
+  alt: str(row.alt),
+  mime: str(row.mime, 'image/png') as LandingImage['mime'],
+  bytes: num(row.bytes),
+  width: nullableNum(row.width),
+  height: nullableNum(row.height),
+  model: str(row.model),
+  latencyMs: num(row.latency_ms),
+  createdAt: str(row.created_at),
+});
+
+export const fromLandingImage = (image: Partial<LandingImage>): Row => prune({
+  id: image.id,
+  owner_id: image.ownerId,
+  project_id: image.projectId,
+  generation_id: image.generationId,
+  prompt: image.prompt,
+  alt: image.alt,
+  mime: image.mime,
+  bytes: image.bytes,
+  width: image.width,
+  height: image.height,
+  model: image.model,
+  latency_ms: image.latencyMs,
 });
 
 export const toReview = (row: Row): GenerationReview => ({

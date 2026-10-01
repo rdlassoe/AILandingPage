@@ -183,6 +183,24 @@ export interface ComposePromptResult {
   promptVersionId: string;
 }
 
+/**
+ * Resultado del paso de imagenes (tecnica "Generacion de imagenes"): cuantos
+ * marcadores `<img data-ai-image>` hay en la pagina y cuantos tienen ya una
+ * imagen real. Los pendientes quedan como bloque neutro y se pueden reintentar.
+ */
+export interface ImageStepReport {
+  /** Marcadores de imagen que hay en la pagina. */
+  total: number;
+  /** Con imagen real tras este paso: las que ya tenian mas las generadas ahora. */
+  ready: number;
+  /** Generadas en ESTE paso. */
+  generated: number;
+  /** Siguen como marcador pendiente. */
+  pending: number;
+  /** Por que quedaron pendientes (mensaje para el usuario); `null` si no hay ninguno. */
+  reason: string | null;
+}
+
 export interface GenerateLandingResult {
   landingPage: LandingPage;
   generationId: string;
@@ -193,6 +211,8 @@ export interface GenerateLandingResult {
   model: string;
   latencyMs: number;
   servedFromCache: boolean;
+  /** Presente solo si la pagina lleva marcadores de imagen (o el prompt los pedia). */
+  images?: ImageStepReport;
 }
 
 /* -------------------------------------------------------------------------

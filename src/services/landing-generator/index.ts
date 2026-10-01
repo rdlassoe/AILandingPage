@@ -1,9 +1,11 @@
 import 'server-only';
 
 import type { DataStore } from '@/lib/data/types';
+import { env } from '@/lib/env';
 import { AppException, forbidden, notFound } from '@/lib/errors';
 import { truncate } from '@/lib/utils';
 import { resolveProvider } from '@/lib/llm/registry';
+import { finalizeLandingImages, IMAGE_MARKER } from '@/services/image-generator';
 import { runLLM } from '@/services/llm-orchestrator';
 import { validateLandingOutput } from '@/services/output-validator';
 import {
@@ -17,6 +19,7 @@ import {
   renderSeedBlock,
 } from '@/services/prompt-engine';
 import {
+  IMAGES_LABEL,
   MANUAL_EDIT_LABEL,
   VARIATION_STRATEGIES,
   type Generation,
@@ -33,6 +36,7 @@ import type {
   DesignTechniqueId,
   GenerateLandingInput,
   GenerateLandingResult,
+  ImageStepReport,
   RandomSeedResult,
   RefineInput,
   ValidationIssue,
@@ -307,6 +311,20 @@ const BRIEF_SECTIONS: PromptSectionId[] = [
   'NEGATIVE_CONSTRAINTS',
 ];
 
+/**
+ * Las imagenes generadas viven fuera del HTML y este solo lleva su URL corta:
+ * si el modelo las reescribe, inventa otra URL o quita `data-ai-image`, la
+ * pagina pierde la imagen o deja de poder reintentarla. Solo se anade la regla
+ * a las paginas que llevan marcadores, para no gastar tokens en las demas.
+ */
+function preserveImagesRule(html: string): string[] {
+  return html.includes(IMAGE_MARKER)
+    ? [
+        `- Conserva intactas las etiquetas <img ${IMAGE_MARKER}="..."> con su atributo src (son imagenes ya generadas o marcadores pendientes): no las elimines, no cambies su src ni inventes otras URLs.`,
+      ]
+    : [];
+}
+
 function renderBrief(sections: PromptSection[], fallbackContent: string): string {
   const filtered = sections.filter((section) => BRIEF_SECTIONS.includes(section.id));
   if (filtered.length === 0) return fallbackContent;
@@ -477,6 +495,7 @@ export async function refineLanding(
     '- Aplica exactamente los cambios listados. No rediseñes lo que no se menciona.',
     '- Conserva el contenido, el tono y la identidad visual que ya funcionaban.',
     '- No introduzcas dependencias ni secciones nuevas que nadie ha pedido.',
+    ...preserveImagesRule(landing.html),
     '- Devuelve el documento HTML completo y autocontenido, no un fragmento ni un diff.',
     '- Primera linea: <!DOCTYPE html>. Ultima linea: </html>. Sin markdown.',
   ].join('\n');
@@ -569,6 +588,7 @@ export async function generateVariation(
     '## REGLAS',
     '- La variante debe ser reconociblemente distinta, no un ajuste cosmetico.',
     '- Manten la calidad, la accesibilidad y las restricciones negativas del encargo original.',
+    ...preserveImagesRule(landing.html),
     '- Devuelve el documento HTML completo y autocontenido.',
     '- Primera linea: <!DOCTYPE html>. Ultima linea: </html>. Sin markdown.',
   ].join('\n');
@@ -635,10 +655,19 @@ interface RunGenerationInput {
   skipCooldown?: boolean;
 }
 
+/**
+ * Las rutas de generacion declaran `maxDuration = 120`. Se deja un margen de 5 s
+ * para guardar y responder: el paso de imagenes no puede empezar ni terminar
+ * pasado este instante, y se salta si no queda tiempo (quedan marcadores y el
+ * boton de reintento).
+ */
+const REQUEST_BUDGET_MS = 115_000;
+
 async function runGeneration(
   ctx: GenerationContext,
   input: RunGenerationInput,
 ): Promise<GenerateLandingResult> {
+  const startedAt = Date.now();
   const generation = await ctx.store.createGeneration(ctx.ownerId, {
     projectId: input.project.id,
     promptId: input.promptId,
@@ -673,7 +702,7 @@ async function runGeneration(
     });
 
     // Paso 10: validacion del HTML
-    const validation = validateLandingOutput(outcome.text);
+    let validation = validateLandingOutput(outcome.text);
     const warnings = validation.issues.filter((i) => i.severity === 'warning').map((i) => i.message);
 
     if (!validation.valid) {
@@ -699,6 +728,41 @@ async function runGeneration(
         hint: 'Prueba a simplificar el prompt, a reducir el numero de secciones o a cambiar de modelo.',
         retryable: true,
       });
+    }
+
+    // Imagenes (tecnica "Generacion de imagenes"): solo tras la generacion
+    // inicial. Refinar y variar conservan las que ya hay y NO regeneran nada:
+    // las pendientes se reintentan a mano (`retryLandingImages`).
+    let imageReport: ImageStepReport | undefined;
+    if (input.kind === 'landing') {
+      const images = await finalizeLandingImages({
+        html: validation.html,
+        ownerId: ctx.ownerId,
+        store: ctx.store,
+        projectId: input.project.id,
+        generationId: generation.id,
+        promptRequestedImages: input.prompt.includes(IMAGE_MARKER),
+        deadlineAt: Math.min(Date.now() + env.images.stepBudgetMs, startedAt + REQUEST_BUDGET_MS),
+      });
+
+      if (images.html !== validation.html) {
+        // Las URLs cortas no cambian el tamano de forma apreciable, pero el
+        // documento que se guarda es el resultante: se vuelve a medir.
+        const measured = validateLandingOutput(images.html, { normalize: false });
+        if (measured.valid) {
+          validation = { ...measured, issues: validation.issues, normalized: validation.normalized };
+        } else {
+          images.warnings.push('El HTML con las imagenes no paso la validacion; se guardo sin ellas.');
+        }
+      }
+
+      const usable = validation.html === images.html;
+      const imageIssues = images.warnings.map((message) => ({ code: 'image_step', message, severity: 'warning' as const }));
+      validation = { ...validation, issues: [...validation.issues, ...imageIssues] };
+      warnings.push(...images.warnings);
+      if (images.report.total > 0 || imageIssues.length > 0) {
+        imageReport = usable ? images.report : { ...images.report, generated: 0, ready: 0, pending: images.report.total };
+      }
     }
 
     // Pasos 11 y 15: guardar la Landing Page y su version
@@ -739,6 +803,7 @@ async function runGeneration(
       model: outcome.model,
       latencyMs: outcome.latencyMs,
       servedFromCache: outcome.servedFromCache,
+      ...(imageReport ? { images: imageReport } : {}),
     };
   } catch (error) {
     const appError = error instanceof AppException ? error : null;
@@ -919,6 +984,82 @@ export async function saveManualEdit(
   // Se relee para devolver `currentVersion` ya incrementado.
   const fresh = (await ctx.store.getLandingPage(ctx.ownerId, landing.id)) ?? updated;
   return { landing: fresh, issues: validation.issues, changed: true };
+}
+
+export interface RetryImagesResult {
+  landing: LandingPage;
+  images: ImageStepReport;
+  /** Por que siguen pendientes las que no se pudieron generar, o que ha pasado. */
+  warnings: string[];
+  /** `false` si no se genero ninguna imagen nueva y por tanto no se creo version. */
+  changed: boolean;
+}
+
+/**
+ * Reintenta los marcadores de imagen que siguen pendientes (los que fallaron o
+ * se quedaron sin tiempo en la generacion) sobre el HTML vigente.
+ *
+ * Solo si se genera al menos una imagen nueva se guarda una version (etiqueta
+ * `IMAGES_LABEL`); si todo vuelve a fallar, la pagina queda como estaba y no se
+ * ensucia el historial. Las que ya tenian imagen no se tocan ni se vuelven a
+ * pedir, asi que reintentar no gasta cuota de mas.
+ */
+export async function retryLandingImages(ctx: GenerationContext, landingId: string): Promise<RetryImagesResult> {
+  const landing = await ctx.store.getLandingPage(ctx.ownerId, landingId);
+  if (!landing) throw notFound('esa Landing Page');
+  // `getLandingPage` tambien devuelve las paginas publicas de otras cuentas.
+  if (landing.ownerId !== ctx.ownerId) throw forbidden();
+  if (!landing.projectId) {
+    throw new AppException({
+      code: 'validation',
+      message: 'Esta Landing Page no esta asociada a ningun proyecto, asi que no se le pueden generar imagenes.',
+    });
+  }
+
+  const images = await finalizeLandingImages({
+    html: landing.html,
+    ownerId: ctx.ownerId,
+    store: ctx.store,
+    projectId: landing.projectId,
+    generationId: null,
+    promptRequestedImages: false,
+    deadlineAt: Date.now() + env.images.stepBudgetMs,
+  });
+
+  if (images.report.generated === 0) {
+    return { landing, images: images.report, warnings: images.warnings, changed: false };
+  }
+
+  const validation = validateLandingOutput(images.html, { normalize: false });
+  const blocking = validation.issues.filter((issue) => issue.severity === 'error');
+  if (blocking.length > 0) {
+    throw new AppException({
+      code: 'validation',
+      message: `No se puede guardar el HTML con las imagenes: ${blocking.map((issue) => issue.message).join(' ')}`,
+    });
+  }
+
+  // Mismo orden que `saveManualEdit`: primero la pagina, despues la version.
+  await ctx.store.updateLandingPage(ctx.ownerId, landing.id, {
+    html: validation.html,
+    metadata: {
+      ...landing.metadata,
+      sections: validation.sections,
+      sizeBytes: validation.sizeBytes,
+      hasScript: validation.hasScript,
+      hasStyle: validation.hasStyle,
+    },
+  });
+  await ctx.store.createLandingVersion(ctx.ownerId, {
+    landingPageId: landing.id,
+    html: validation.html,
+    label: IMAGES_LABEL,
+    generationId: null,
+    promptVersionId: landing.promptVersionId,
+  });
+
+  const fresh = (await ctx.store.getLandingPage(ctx.ownerId, landing.id)) ?? landing;
+  return { landing: fresh, images: images.report, warnings: images.warnings, changed: true };
 }
 
 async function ensurePrompt(

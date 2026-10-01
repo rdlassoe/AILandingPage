@@ -92,6 +92,13 @@ const hasTechniqueText = (text, id) => text.includes(byId[id].instruction);
     if (hasSection(draft, 'SEED_STRING') !== seedSelected) fail('seccion SEED STRING');
     if ((draft.seedStringValue !== null) !== seedSelected) fail('seedStringValue');
     if (!seedSelected && /seed/i.test(draft.content)) fail('menciona la Seed sin haberla elegido');
+    // Las imagenes se piden con marcadores `data-ai-image`: solo si esta elegida la tecnica,
+    // y entonces OUTPUT_FORMAT tambien deja de decir que son SVG inline.
+    const imagesSelected = selected.includes('image-generation');
+    if (!imagesSelected && /data-ai-image/.test(draft.content)) fail('menciona los marcadores de imagen sin elegirlos');
+    const outputFormat = draft.sections.find((section) => section.id === 'OUTPUT_FORMAT')?.body ?? '';
+    if (imagesSelected && !outputFormat.includes('data-ai-image')) fail('OUTPUT_FORMAT no menciona los marcadores');
+    if (imagesSelected && outputFormat.includes('se sustituyen por SVG inline')) fail('OUTPUT_FORMAT contradice la tecnica de imagenes');
   }
   check(bad === 0, `Borrador respeta la seleccion en las ${1 << ids.length} combinaciones`, problems.join(' | '));
 }
@@ -193,6 +200,7 @@ const DEFAULTS = DEFAULT_TECHNIQUE_IDS;
     ['video', 'VISUAL DIRECTION', 'Deja <!-- VIDEO: fondo del hero --> en el hero.', NONE],
     ['redaccion humana', 'COPY REQUIREMENTS', 'Usa longitud variable de frase para dar ritmo.', ONLY_AMBITIOUS],
     ['subagentes', 'OBJECTIVE', 'Actua como tu propio critico antes de entregar.', ['human-writing']],
+    ['imagenes', 'VISUAL DIRECTION', 'Para cada foto, escribe un marcador sin atributo src.', NONE],
   ];
   for (const [label, title, extra, selected] of cases) {
     const draft = draftFor(selected);

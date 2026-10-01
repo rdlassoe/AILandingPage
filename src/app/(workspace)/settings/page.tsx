@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 
 import { PageBody, PageHeader } from '@/components/layout/page-header';
+import { ImageProviderSettings } from '@/features/settings/image-provider-settings';
 import { ProviderSettings } from '@/features/settings/provider-settings';
 import { Panel, PanelBody, PanelHeader, DefinitionList, Badge } from '@/components/ui';
 import { requireContext } from '@/lib/auth/session';
@@ -32,6 +33,12 @@ export default async function SettingsPage() {
           providers={providers}
           profile={profile}
           defaultProvider={env.llm.defaultProvider}
+        />
+
+        <ImageProviderSettings
+          configured={runtime.imageGeneration.configured}
+          model={runtime.imageGeneration.model}
+          maxPerLanding={runtime.imageGeneration.maxPerLanding}
         />
 
         <Panel>

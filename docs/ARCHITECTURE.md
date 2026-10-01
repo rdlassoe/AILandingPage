@@ -91,6 +91,10 @@ output-validator
         ├── inválido ──► generations(status='invalid_output') + AppException
         │
         ▼ válido
+  4b. si la página lleva marcadores <img data-ai-image> (técnica "Generación de
+      imágenes"): image-generator genera cada imagen con FLUX (Cloudflare), la
+      guarda aparte y deja en el HTML una URL corta. Lo que falle queda como
+      marcador visible y se puede reintentar — decisión 12. No es fatal.
   5. crea landing_page + landing_version
   6. generations(status='success', latencia, tokens, avisos)
         │
@@ -195,6 +199,11 @@ permite comprobar que los menús y los formularios funcionan de verdad— pero n
 cookies, `localStorage` ni acceder a la ventana padre. Nunca se usa
 `dangerouslySetInnerHTML` para la página completa. El inspector de la decisión 11 se construyó
 respetando este aislamiento: no se le añadió `allow-same-origin`.
+
+**Consecuencia medida (decisión 12).** Desde ese origen opaco **no se puede pedir nada a
+`localhost`**: ni un `<img src="/api/…">` ni un `fetch` con `no-cors` salen (comprobado en un
+navegador real; las imágenes externas y los `data:` sí cargan). Lo que el iframe necesita de la
+propia aplicación tiene que entrar ya dentro del `srcDoc`.
 
 ### 7. El refinamiento no reenvía el encargo entero
 
@@ -412,6 +421,88 @@ CodeMirror 6 son ~300 KB cargados en diferido solo en las pantallas de edición)
 - `PATCH /api/landings/[id]` ya **no** acepta `html`: había un esqueleto que nadie usaba, guardaba
   un HTML vacío y no comprobaba el propietario. Todo el guardado de HTML pasa por la ruta nueva,
   para que las reglas de arriba no puedan esquivarse.
+
+### 12. Imágenes generadas con IA: assets aparte, URL corta en el HTML, base64 solo al mostrar o exportar
+
+**Decisión.** La técnica «Generación de imágenes» genera imágenes reales con FLUX.1 schnell
+(Cloudflare Workers AI, capa gratuita) y las añade a la página. Las piezas:
+
+1. **Contrato en el HTML.** El LLM deja, donde quiere una imagen, un marcador **sin `src`**:
+   `<img data-ai-image="prompt en inglés" alt="…" width="1024" height="1024" loading="lazy">` (máximo 4,
+   cuadrado, sin texto dentro). `src/lib/images/slots.ts` los localiza con `parse5` y los reescribe por
+   **empalme de cadena** (mismo patrón que el inspector: posiciones del parser, sin re-serializar el
+   árbol), así que el resto del HTML queda byte a byte igual.
+2. **Paso de imágenes** (`src/services/image-generator`), entre validar y guardar
+   (`runGeneration`, solo en la generación inicial): genera con concurrencia 2, guarda cada imagen
+   aparte y sustituye el marcador por `src="/api/landing-images/<uuid>"`.
+3. **El HTML es el estado.** Un marcador está *pendiente* si su `src` no apunta a
+   `/api/landing-images/`. No hay tabla de tareas: reintentar es volver a pasar el HTML vigente por el
+   mismo servicio (`POST /api/landings/[id]/images`, que crea la versión «Imagenes» solo si se generó
+   alguna).
+4. **No es fatal.** Sin credenciales, con la cuota agotada, sin tiempo en la petición o con una
+   imagen fallida, la página se guarda igual: el marcador queda como bloque neutro y un comentario
+   `<!-- IMAGEN PENDIENTE: prompt -->`. **Nunca se fabrica una imagen falsa**: sin imagen real hay un
+   marcador visible como tal, igual que el modo demo se etiqueta como demo.
+5. **Almacenamiento.** Tabla `landing_images` (metadatos) y los bytes aparte: `.data/images/<id>` en
+   modo local, bucket **público** `landing-images` de Supabase Storage en producción. La ruta
+   `GET /api/landing-images/[id]` no pide sesión: local → sirve el fichero; Supabase → `302` al bucket,
+   sin consulta a BD ni clave de servicio.
+6. **Presentación.** El HTML guardado nunca lleva bytes. La vista previa, las miniaturas de la
+   biblioteca, «Abrir en una pestaña nueva», «Descargar HTML» y «Copiar HTML» **incrustan las
+   imágenes como `data:`** en el momento (`src/lib/preview/inline-images.ts`, con caché por id).
+7. **Fuera de `ProviderId` y de `generations`.** Cloudflare no es un proveedor de texto, y el enum
+   `provider_id` de Postgres alimenta ~28 ficheros y los selectores. Registrar cada imagen en
+   `generations` tampoco: no admite `cloudflare` como proveedor y `getDashboardStats` no filtra por
+   `kind`, así que falsearía las medias de latencia. La trazabilidad vive en `landing_images`
+   (prompt, modelo, latencia, generación y proyecto).
+
+**Motivo de los assets aparte.** El HTML vive entero en `landing_pages.html` y en **cada**
+`landing_versions.html`, y lo consumen el crítico (recorta a 60 000 caracteres), el refinamiento y las
+variantes (lo reenvían íntegro al LLM; Groq da 413 por encima de ~8 000 tokens), el editor CodeMirror
+(sin ajuste de línea), el borrador en `localStorage` y el validador (límite de 2 MB). Un base64
+incrustado rompe todo eso: una imagen son cientos de KB por versión.
+
+**Por qué la vista previa incrusta en vez de usar la URL.** Se planteó servir la URL sin sesión y
+dejar que el iframe la cargara. **No funciona en desarrollo:** el iframe es un origen opaco
+(decisión 6) y desde él las peticiones a `localhost` se bloquean por completo (se comprobó con
+`<img>` y con `fetch` `no-cors`; en un dominio público funcionaría, pero la app se ejecuta en
+`localhost`). Por eso el **padre** (mismo origen, sin restricciones) descarga las imágenes y entrega
+al iframe un documento con `data:`. El `sandbox` no cambia: conceder `allow-same-origin` para evitarlo
+dejaría que el HTML generado —código no confiable— se quitara el sandbox. La incrustación se aplica al
+documento **ya instrumentado** por el inspector: sus posiciones `data-ale-src` son números calculados
+sobre el texto original y no les afecta cambiar una URL por un `data:` dentro del `srcDoc`.
+
+**Privacidad asumida.** La ruta es pública: el `uuid` v4 es la única capacidad de lectura. Quien
+tenga la URL exacta ve esa imagen aunque la Landing Page sea privada (y en Supabase el bucket es
+público). Se acepta porque son imágenes generadas por IA a partir de un prompt del LLM, la URL solo
+aparece dentro del HTML de la página y ese HTML ya contiene todo lo demás. Una ruta con sesión
+exigiría resolver, para cada imagen, si la página es pública o de otra cuenta.
+
+**Tiempo.** La generación es una sola petición con `maxDuration = 120` y el LLM puede tardar 90 s:
+el paso de imágenes recibe `min(45 s, 115 s − transcurrido)` y se salta si quedan menos de 10 s
+(quedan marcadores y el botón «Reintentar imágenes»). No hay progreso por imagen: haría falta
+streaming (ver «Límites conocidos» en [`DEVELOPMENT.md`](DEVELOPMENT.md)).
+
+**Refinar y variar** conservan las imágenes (el LLM recibe la regla de no tocar los
+`<img data-ai-image>` con su `src`) pero no generan nuevas ni regeneran. El Mock las conserva
+reescribiendo la etiqueta tal cual estaba.
+
+**Coste y límites conocidos.**
+
+- La cuota gratuita (10 000 neuronas/día, ~170-230 imágenes) es de la **cuenta** de Cloudflare, no de
+  un usuario; los limitadores (freno de cuota, imágenes por hora) viven en memoria de proceso. Hay
+  reportes de 429/`4006` que persisten tras el reinicio de las 00:00 UTC: el freno dura 10 min y los
+  mensajes no prometen el reinicio. Detalle en
+  [`LLM_PROVIDERS.md`](LLM_PROVIDERS.md#generación-de-imágenes-cloudflare-workers-ai).
+- La resolución y el formato de schnell no están documentados: `npm run verify:cloudflare` los mide.
+- No se pueden regenerar imágenes sueltas ni generar desde el editor: solo las pendientes.
+- Las imágenes cuelgan del proyecto (`on delete cascade`), no de la página: una variante comparte las
+  de su original y borrar una página no borra sus imágenes.
+- Un elemento que crea el JavaScript de la propia página no pasa por aquí: solo se generan los
+  marcadores que están en el HTML.
+- La política de almacenamiento de Supabase (bucket y políticas de `storage.objects` en
+  `schema.sql`/`policies.sql`) **no se ha ejecutado contra una base real**: si `db:setup` no puede
+  crearla, el bucket se crea a mano (público) desde el panel. `db:check` avisa si falta.
 
 ---
 

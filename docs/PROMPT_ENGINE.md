@@ -184,15 +184,38 @@ Las 8 de *"Tratado Práctico: 8 Técnicas Avanzadas de Diseño de Landing Pages 
 | Cadenas Semilla (SSoT) | Sí | Obliga a que la Seed derivada por la técnica cambie decisiones concretas, no adornos. |
 | Prompts Ambiciosos | No | Psicología del usuario, sesgos cognitivos, fricción a eliminar por sección — no solo estética. |
 | Bucles con subagentes | No | El modelo se auto-audita bajo criterios de UX/persuasión antes de entregar su respuesta final. |
-| Generación de imágenes | No | Describe cada imagen como prompt para Midjourney/DALL-E (comentario HTML), no la genera de verdad. |
+| Generación de imágenes | No | Pide marcadores `<img data-ai-image="…">` (máx. 4, prompt en inglés, sin `src`) y **el servidor genera las imágenes de verdad** con FLUX (Cloudflare) y las añade a la página. Ver [abajo](#generación-de-imágenes-real). |
 | Generación de vídeo | No | Igual, para un posible vídeo de fondo — la app no integra ningún generador de vídeo. |
 | Diseño sustractivo | Sí | Auditoría de cada elemento y techos duros: máx. 6 secciones, 4 tarjetas, 1 CTA primario, 3 campos por formulario. |
 | Restricciones negativas reforzadas | Sí | Severidad extra sobre la sección `NEGATIVE_CONSTRAINTS` ya existente: nada de "huella de IA". |
 | Redacción humana | Sí | Frases concretas, cifras, micro-copy; prohíbe los clichés de IA por nombre. |
 
-Las dos técnicas de imagen/vídeo son deliberadamente **prompt-instrucciones, no generación
-real**: la app no integra ningún modelo de imagen ni de vídeo, y fingir que sí sería simular
-una integración — algo que el proyecto prohíbe explícitamente en todo lo demás.
+**«Generación de vídeo» sigue siendo una prompt-instrucción, no generación real**: la app no
+integra ningún modelo de vídeo, y fingir que sí sería simular una integración — algo que el
+proyecto prohíbe explícitamente en todo lo demás. Pide un comentario
+`<!-- VIDEO: … -->` con la descripción para pegarla en un generador externo.
+
+### Generación de imágenes (real)
+
+Desde la decisión 12 de [`ARCHITECTURE.md`](ARCHITECTURE.md#12-imágenes-generadas-con-ia-assets-aparte-url-corta-en-el-html-base64-solo-al-mostrar-o-exportar)
+esta técnica **sí genera**. La instrucción (`design-techniques.ts`) pide al LLM:
+
+- hasta 4 marcadores `<img data-ai-image="[prompt en inglés]" alt="[español]" width="1024"
+  height="1024" loading="lazy" class="…">` **sin `src`**: el hero y, como mucho, tres más;
+- prompts de una a tres frases y 300 caracteres, coherentes con la dirección visual, **sin texto,
+  letras, logotipos ni rostros en primer plano** (schnell no tiene prompt negativo: el servidor añade
+  además el sufijo `, no text, no letters, no logos, no watermark`);
+- contenedores con `aspect-ratio` y `object-fit: cover` (las imágenes salen cuadradas) y un color de
+  fondo que funcione mientras la imagen no cargue.
+
+Con la técnica elegida, la línea de `OUTPUT FORMAT` que decía «las imágenes se sustituyen por SVG
+inline» pasa a decir que las imágenes de contenido se piden con esos marcadores; sin ella, nada del
+prompt menciona `data-ai-image` (lo comprueba `verify:prompt` en las 256 combinaciones). Sus frases
+distintivas están en `TECHNIQUE_FINGERPRINTS` para detectar que un LLM la coló sin haberla elegido.
+
+Qué hace el servidor con esos marcadores, qué pasa si falla y cómo se presenta: decisión 12. Sin
+credenciales de Cloudflare, la técnica se degrada al comportamiento anterior (el marcador queda con
+un comentario con la descripción) y el Prompt Studio lo avisa junto al checkbox.
 
 ### Dónde aparecen las técnicas
 
@@ -239,7 +262,9 @@ Qué **no** cubre:
   parecida a una técnica sin copiar su texto, p. ej. en `QUALITY CRITERIA`; y el borrador base ya
   trae criterios generales («ningún elemento sin propósito») que no son una técnica.
 - **Las fases posteriores no vuelven a aplicar técnicas.** El refinamiento y las variantes solo
-  repiten siete secciones del encargo y ninguna técnica. La variante «nueva Seed» genera una Seed
+  repiten siete secciones del encargo y ninguna técnica. Las imágenes generadas sí se conservan:
+  esos dos pasos añaden la regla de no tocar los `<img data-ai-image>` ni su `src`, pero no generan
+  imágenes nuevas. La variante «nueva Seed» genera una Seed
   aunque el encargo original no la llevara: es justo lo que el usuario pide al elegirla.
 - **Se comprobó con respuestas simuladas, no con un modelo real** (no hay claves en este
   entorno): prueba lo que el código garantiza frente a un modelo que no obedece, no qué hace

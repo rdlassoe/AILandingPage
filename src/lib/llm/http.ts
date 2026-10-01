@@ -1,6 +1,6 @@
 import 'server-only';
 
-import { LLMError, type LLMErrorCode, type ProviderId } from '@/types/llm';
+import { LLMError, type ErrorSource, type LLMErrorCode } from '@/types/llm';
 
 /**
  * Utilidades HTTP compartidas por los adaptadores.
@@ -11,7 +11,7 @@ import { LLMError, type LLMErrorCode, type ProviderId } from '@/types/llm';
  */
 
 export interface HttpCallOptions {
-  provider: ProviderId;
+  provider: ErrorSource;
   url: string;
   body: unknown;
   headers?: Record<string, string>;
@@ -94,9 +94,16 @@ function statusToCode(status: number): LLMErrorCode {
   return 'unknown';
 }
 
-function hintForStatus(status: number, provider: ProviderId, retryAfter?: string | null): string | undefined {
+function hintForStatus(status: number, provider: ErrorSource, retryAfter?: string | null): string | undefined {
   if (status === 401 || status === 403) {
-    const envVar = provider === 'gemini' ? 'GEMINI_API_KEY' : provider === 'groq' ? 'GROQ_API_KEY' : null;
+    const envVar =
+      provider === 'gemini'
+        ? 'GEMINI_API_KEY'
+        : provider === 'groq'
+          ? 'GROQ_API_KEY'
+          : provider === 'cloudflare'
+            ? 'CLOUDFLARE_API_TOKEN'
+            : null;
     return envVar
       ? `Revisa ${envVar} en tu archivo .env.local.`
       : 'El servidor rechazo la peticion por autenticacion.';

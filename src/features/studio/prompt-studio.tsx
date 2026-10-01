@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Copy, Eye, FileCode2, Play, Save, Shuffle, Wand2 } from 'lucide-react';
+import { Copy, Eye, FileCode2, ImagePlus, Play, Save, Shuffle, Wand2 } from 'lucide-react';
 
 import { CriticPanel } from './critic-panel';
 import { HtmlCodeEditor } from '@/components/editor/html-code-editor.lazy';
@@ -16,6 +16,7 @@ import { useDebouncedValue } from '@/features/editor/use-debounced-value';
 import { useInspectorSync } from '@/features/editor/use-inspector-sync';
 import { useLandingEditor } from '@/features/editor/use-landing-editor';
 import { apiPatch, apiPost } from '@/lib/api-client';
+import { IMAGE_ATTR } from '@/lib/images/slots';
 import type { ProviderSummary } from '@/lib/llm/registry';
 import { cn, estimateTokens, formatDuration } from '@/lib/utils';
 import { VARIATION_STRATEGIES } from '@/types/domain';
@@ -26,7 +27,9 @@ import type {
   DesignTechnique,
   DesignTechniqueId,
   GenerateLandingResult,
+  ImageStepReport,
 } from '@/types/services';
+import type { RetryImagesResult } from '@/services/landing-generator';
 import type { ProviderId } from '@/types/llm';
 
 /**
@@ -40,13 +43,15 @@ import type { ProviderId } from '@/types/llm';
  * previsualizar -> auditar -> refinar -> versionar -> guardar.
  */
 
-type Busy = null | 'composing' | 'generating' | 'critiquing' | 'refining' | 'varying' | 'saving';
+type Busy = null | 'composing' | 'generating' | 'critiquing' | 'refining' | 'varying' | 'saving' | 'imaging';
 
 interface StudioProps {
   projects: Project[];
   providers: ProviderSummary[];
   techniques: DesignTechnique[];
   defaultTechniqueIds: DesignTechniqueId[];
+  /** Hay credenciales de Cloudflare: la tecnica de imagenes genera de verdad en vez de dejar marcadores. */
+  imageGenerationConfigured: boolean;
 }
 
 interface LastRun {
@@ -63,6 +68,7 @@ export function PromptStudio({
   providers,
   techniques,
   defaultTechniqueIds,
+  imageGenerationConfigured,
 }: StudioProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -93,6 +99,8 @@ export function PromptStudio({
   const [criticError, setCriticError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [lastRun, setLastRun] = useState<LastRun | null>(null);
+  /** Paso de imagenes de la ultima generacion (solo si la pagina lleva marcadores). */
+  const [imageReport, setImageReport] = useState<ImageStepReport | null>(null);
 
   // Edicion del HTML generado. Guardar es explicito: lo escrito no es definitivo (y el
   // critico no lo ve) hasta que se guarda como una version nueva.
@@ -298,6 +306,32 @@ export function PromptStudio({
     router.refresh();
   };
 
+  /** Reintenta solo los marcadores de imagen que siguen pendientes (no gasta cuota en los demas). */
+  const retryImages = async () => {
+    if (!landing) return;
+    setBusy('imaging');
+    setError(null);
+    setNotice(null);
+
+    const result = await apiPost<RetryImagesResult>(`/api/landings/${landing.id}/images`, {});
+    if (!result.ok) {
+      setError(result.error.message);
+      setBusy(null);
+      return;
+    }
+
+    const { landing: next, images, changed } = result.data;
+    setImageReport(images);
+    if (changed) {
+      setLanding(next);
+      setNotice(`Se generaron ${images.generated} imagen(es) nuevas: ${images.ready} de ${images.total} listas.`);
+    } else {
+      setError(`No se pudo generar ninguna imagen nueva${images.reason ? `: ${images.reason}` : '.'}`);
+    }
+    setBusy(null);
+    router.refresh();
+  };
+
   const publish = async (status: LandingPage['status']) => {
     if (!landing) return;
     setBusy('saving');
@@ -323,6 +357,7 @@ export function PromptStudio({
       warnings: data.validation.issues.filter((issue) => issue.severity === 'warning').map((issue) => issue.message),
       normalized: data.validation.normalized,
     });
+    setImageReport(data.images ?? null);
   }
 
   const toggleTechnique = (id: DesignTechniqueId) => {
@@ -596,7 +631,18 @@ export function PromptStudio({
         </Panel>
 
         <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-4">
-          <LandingPreview html={previewHtml} generating={generating} {...inspector.previewProps} />
+          <LandingPreview
+            html={previewHtml}
+            generating={generating || busy === 'imaging'}
+            generatingLabel={
+              busy === 'imaging'
+                ? 'Generando imagenes...'
+                : busy === 'generating' && promptText.includes(IMAGE_ATTR)
+                  ? 'Generando HTML e imagenes...'
+                  : undefined
+            }
+            {...inspector.previewProps}
+          />
 
           {landing ? <InspectorPanel sync={inspector} /> : null}
 
@@ -612,7 +658,31 @@ export function PromptStudio({
                   <span className="font-mono text-xs text-muted">{lastRun.model}</span>
                   <span className="text-xs text-faint">{formatDuration(lastRun.latencyMs)}</span>
                   {landing ? <Badge>v{landing.currentVersion}</Badge> : null}
+                  {imageReport && imageReport.total > 0 ? (
+                    <Badge tone={imageReport.pending === 0 ? 'ok' : 'warn'}>
+                      Imagenes {imageReport.ready}/{imageReport.total}
+                    </Badge>
+                  ) : null}
                 </div>
+
+                {imageReport && imageReport.pending > 0 && landing ? (
+                  <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
+                    <span>
+                      {imageReport.pending} imagen(es) sin generar
+                      {imageReport.reason ? `: ${imageReport.reason}` : '.'}
+                    </span>
+                    <Button
+                      size="sm"
+                      onClick={retryImages}
+                      loading={busy === 'imaging'}
+                      disabled={landingEditor.dirty}
+                      title={landingEditor.dirty ? 'Guarda o descarta los cambios de codigo antes de reintentar.' : undefined}
+                    >
+                      <ImagePlus className="size-3.5" aria-hidden="true" />
+                      Reintentar imagenes
+                    </Button>
+                  </div>
+                ) : null}
 
                 {lastRun.normalized ? (
                   <p className="text-xs text-warn">
@@ -701,6 +771,15 @@ export function PromptStudio({
                       <span className="min-w-0">
                         <span className="block font-medium text-ink">{technique.label}</span>
                         <span className="block text-xs text-muted">{technique.summary}</span>
+                        {technique.id === 'image-generation' && checked && !imageGenerationConfigured ? (
+                          <span className="mt-1 block text-xs text-warn">
+                            Cloudflare no esta configurado: la pagina llevara marcadores con la descripcion de cada
+                            imagen, sin generarlas.{' '}
+                            <Link href="/settings" className="text-accent underline underline-offset-2">
+                              Configurar
+                            </Link>
+                          </span>
+                        ) : null}
                       </span>
                     </label>
                   </li>

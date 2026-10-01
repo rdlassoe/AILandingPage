@@ -4,8 +4,10 @@ import { BookMarked, Star } from 'lucide-react';
 
 import { PageBody, PageHeader } from '@/components/layout/page-header';
 import { Badge, EmptyState, Input, LinkButton, Panel, PanelBody, PanelHeader, Select } from '@/components/ui';
+import { LandingThumbnail } from '@/features/library/landing-thumbnail';
 import { requireContext } from '@/lib/auth/session';
 import { LANDING_CATEGORIES } from '@/lib/data/catalog';
+import { IMAGE_ROUTE_PREFIX } from '@/lib/images/slots';
 import { cn, formatBytes, formatRelative } from '@/lib/utils';
 import type { LandingPage, LandingStatus } from '@/types/domain';
 import type { ProviderId } from '@/types/llm';
@@ -179,16 +181,20 @@ function LandingCard({
     >
       {/* Miniatura real: el propio documento renderizado y reducido a escala */}
       <div className="relative h-40 overflow-hidden border-b border-line bg-white">
-        <iframe
-          title={`Vista previa de ${landing.name}`}
-          srcDoc={landing.html}
-          sandbox=""
-          loading="lazy"
-          aria-hidden="true"
-          tabIndex={-1}
-          className="pointer-events-none h-[1000px] w-[1280px] origin-top-left border-0"
-          style={{ transform: 'scale(0.31)' }}
-        />
+        {landing.html.includes(IMAGE_ROUTE_PREFIX) ? (
+          <LandingThumbnail html={landing.html} title={`Vista previa de ${landing.name}`} />
+        ) : (
+          <iframe
+            title={`Vista previa de ${landing.name}`}
+            srcDoc={landing.html}
+            sandbox=""
+            loading="lazy"
+            aria-hidden="true"
+            tabIndex={-1}
+            className="pointer-events-none h-[1000px] w-[1280px] origin-top-left border-0"
+            style={{ transform: 'scale(0.31)' }}
+          />
+        )}
       </div>
 
       <div className="flex flex-1 flex-col p-3">

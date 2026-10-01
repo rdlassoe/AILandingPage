@@ -3,10 +3,13 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
-import { Code2, Copy, Download, RotateCcw, Save, Trash2 } from 'lucide-react';
+import { Code2, Copy, Download, ImagePlus, RotateCcw, Save, Trash2 } from 'lucide-react';
 
-import { Alert, Button, Field, Input, Select, buttonClassName } from '@/components/ui';
+import { Alert, Badge, Button, Field, Input, Select, buttonClassName } from '@/components/ui';
 import { apiDelete, apiPatch, apiPost } from '@/lib/api-client';
+import { countImageSlots } from '@/lib/images/slots';
+import { inlineLandingImages } from '@/lib/preview/inline-images';
+import type { RetryImagesResult } from '@/services/landing-generator';
 import type { LandingPage, LandingStatus } from '@/types/domain';
 
 const STATUS_LABELS: Array<{ value: LandingStatus; label: string; hint: string }> = [
@@ -21,12 +24,34 @@ export function LandingActions({ landing }: { landing: LandingPage }) {
   const router = useRouter();
   const [name, setName] = useState(landing.name);
   const [status, setStatus] = useState<LandingStatus>(landing.status);
-  const [busy, setBusy] = useState<null | 'saving' | 'reusing' | 'deleting'>(null);
+  const [busy, setBusy] = useState<null | 'saving' | 'reusing' | 'deleting' | 'imaging' | 'exporting'>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   const dirty = name !== landing.name || status !== landing.status;
+  const images = countImageSlots(landing.html);
+
+  const retryImages = async () => {
+    setBusy('imaging');
+    setError(null);
+    setNotice(null);
+
+    const result = await apiPost<RetryImagesResult>(`/api/landings/${landing.id}/images`, {});
+    setBusy(null);
+    if (!result.ok) {
+      setError(result.error.message);
+      return;
+    }
+
+    const { images: report, changed } = result.data;
+    if (changed) {
+      setNotice(`Se generaron ${report.generated} imagen(es) nuevas: ${report.ready} de ${report.total} listas.`);
+    } else {
+      setError(`No se pudo generar ninguna imagen nueva${report.reason ? `: ${report.reason}` : '.'}`);
+    }
+    router.refresh();
+  };
 
   const save = async () => {
     setBusy('saving');
@@ -75,22 +100,37 @@ export function LandingActions({ landing }: { landing: LandingPage }) {
     router.refresh();
   };
 
-  const download = () => {
-    const blob = new Blob([landing.html], { type: 'text/html;charset=utf-8' });
+  // El HTML guardado lleva las imagenes generadas como URLs cortas; un fichero descargado o
+  // pegado en otro sitio no las resolveria, asi que al exportar se incrustan (base64).
+  const download = async () => {
+    setBusy('exporting');
+    const { html, failed } = await inlineLandingImages(landing.html);
+    setBusy(null);
+
+    const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
     anchor.href = url;
     anchor.download = `${slug(landing.name)}.html`;
     anchor.click();
     URL.revokeObjectURL(url);
+    if (failed > 0) setError(`${failed} imagen(es) no se pudieron incrustar: el fichero las enlaza a esta aplicacion.`);
   };
 
   const copyHtml = async () => {
     try {
-      await navigator.clipboard.writeText(landing.html);
-      setNotice('HTML copiado al portapapeles.');
+      setBusy('exporting');
+      const { html, failed } = await inlineLandingImages(landing.html);
+      await navigator.clipboard.writeText(html);
+      setNotice(
+        failed > 0
+          ? `HTML copiado, pero ${failed} imagen(es) no se pudieron incrustar y quedan enlazadas a esta aplicacion.`
+          : 'HTML copiado al portapapeles.',
+      );
     } catch {
       setError('Tu navegador no permitio copiar al portapapeles.');
+    } finally {
+      setBusy(null);
     }
   };
 
@@ -137,6 +177,29 @@ export function LandingActions({ landing }: { landing: LandingPage }) {
         </p>
       </div>
 
+      {images.total > 0 ? (
+        <div className="grid gap-2 border-t border-line pt-3">
+          <div className="flex flex-wrap items-center gap-2 text-sm">
+            <Badge tone={images.pending === 0 ? 'ok' : 'warn'}>
+              Imagenes {images.ready}/{images.total}
+            </Badge>
+            <span className="text-xs text-muted">generadas con IA para esta pagina</span>
+          </div>
+          {images.pending > 0 ? (
+            <>
+              <Button onClick={retryImages} loading={busy === 'imaging'}>
+                <ImagePlus className="size-4" aria-hidden="true" />
+                Reintentar imagenes
+              </Button>
+              <p className="text-xs text-faint">
+                {images.pending} marcador(es) sin imagen. Solo se piden los pendientes; las que ya estan no gastan
+                cuota. Si se genera alguna, se guarda una version nueva.
+              </p>
+            </>
+          ) : null}
+        </div>
+      ) : null}
+
       <div className="grid gap-2 border-t border-line pt-3">
         <Button onClick={reuse} loading={busy === 'reusing'}>
           <RotateCcw className="size-4" aria-hidden="true" />
@@ -144,16 +207,17 @@ export function LandingActions({ landing }: { landing: LandingPage }) {
         </Button>
         <p className="text-xs text-faint">
           Copia el brief, el stack y las restricciones a un proyecto nuevo para modificarlos antes de
-          volver a generar. La Seed String se genera de nuevo en la siguiente ejecucion.
+          volver a generar. Si «Cadenas Semilla» esta elegida, la Seed String se genera de nuevo en la
+          siguiente ejecucion.
         </p>
       </div>
 
       <div className="grid gap-2 border-t border-line pt-3 sm:grid-cols-2">
-        <Button onClick={download}>
+        <Button onClick={download} loading={busy === 'exporting'}>
           <Download className="size-4" aria-hidden="true" />
           Descargar HTML
         </Button>
-        <Button onClick={copyHtml}>
+        <Button onClick={copyHtml} disabled={busy === 'exporting'}>
           <Copy className="size-4" aria-hidden="true" />
           Copiar HTML
         </Button>

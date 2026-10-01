@@ -6,11 +6,16 @@ import type { DesignTechnique, DesignTechniqueId } from '@/types/services';
  * combinables desde el Prompt Studio. Cada una inyecta un bloque concreto en
  * el prompt final.
  *
- * Dos no se ejecutan de verdad: la app no integra ningun modelo de imagen ni
- * de video, asi que "Generacion de imagenes/video" piden una DESCRIPCION
- * detallada del activo (como comentario junto al elemento), no el archivo.
- * Generarlo de verdad queda para quien reciba ese prompt como entrada a
- * Midjourney/DALL-E/Runway.
+ * "Generacion de imagenes" SI se ejecuta: el LLM deja marcadores
+ * `<img data-ai-image="...">` sin `src` y, tras validar la salida, el
+ * servidor genera cada imagen con FLUX (Cloudflare Workers AI) y rellena el
+ * `src` (`src/services/image-generator`). Sin Cloudflare configurado, los
+ * marcadores se quedan como bloque neutro con su descripcion en un comentario.
+ *
+ * "Generacion de video" no: la app no integra ningun modelo de video, asi que
+ * pide una DESCRIPCION detallada (como comentario junto al elemento), no el
+ * archivo. Generarlo queda para quien reciba ese prompt como entrada a
+ * Runway/Luma.
  *
  * "Restricciones Negativas" del PDF no es un toggle aqui: el prompt ya trae
  * una seccion NEGATIVE_CONSTRAINTS siempre presente y editable por proyecto.
@@ -63,17 +68,24 @@ export const DESIGN_TECHNIQUES: DesignTechnique[] = [
   {
     id: 'image-generation',
     label: 'Generacion de imagenes',
-    summary: 'Describe cada imagen como un prompt listo para Midjourney/DALL-E, no la genera.',
+    summary: 'Genera imagenes reales con FLUX (Cloudflare) y las inserta en la pagina.',
     defaultEnabled: false,
     instruction: [
-      'No uses fotografia de stock generica. Para cada imagen relevante, en vez de un',
-      '<img> con una URL de relleno, deja un comentario HTML inmediatamente antes con',
-      'una descripcion detallada, lista para pegar en un generador de imagenes',
-      '(estilo, iluminacion, composicion, paleta, formato), coherente con la direccion',
-      'visual del proyecto. Ejemplo de formato:',
-      '<!-- IMAGEN: [descripcion detallada para Midjourney/DALL-E] -->',
-      'El <img> en si puede usar un marcador de posicion neutro; lo que importa es la',
-      'descripcion que queda documentada.',
+      'La pagina lleva imagenes REALES generadas con IA: el sistema las crea despues de',
+      'recibir tu HTML. No uses fotografia de stock ni URLs de relleno. Para cada imagen',
+      'relevante (maximo 4: el hero y, como mucho, tres mas) escribe un marcador SIN',
+      'atributo src, con este formato:',
+      '<img data-ai-image="[prompt en ingles]" alt="[descripcion en espanol]" width="1024" height="1024" loading="lazy" class="...">',
+      '',
+      '- data-ai-image: prompt en INGLES, de una a tres frases y 300 caracteres como maximo:',
+      '  sujeto, composicion, iluminacion, paleta y estilo, coherentes con la direccion',
+      '  visual del proyecto. Sin texto, letras, logotipos ni marcas de agua dentro de la',
+      '  imagen, y sin rostros en primer plano.',
+      '- alt: descripcion util de la imagen, en el idioma de la pagina.',
+      '- Las imagenes salen CUADRADAS: ponlas en un contenedor con aspect-ratio y usa',
+      '  object-fit: cover para que encajen en cualquier proporcion.',
+      '- No escribas src ni inventes URLs: el sistema lo rellena. Mientras la imagen no',
+      '  cargue, el contenedor debe verse bien (color de fondo coherente con la paleta).',
     ].join('\n'),
   },
   {

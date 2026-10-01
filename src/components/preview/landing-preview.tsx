@@ -13,7 +13,10 @@ import {
   Tablet,
 } from 'lucide-react';
 
+import { IMAGE_ROUTE_PREFIX } from '@/lib/images/slots';
+import { inlineLandingImages } from '@/lib/preview/inline-images';
 import { parseFrameMessage } from '@/lib/preview/messages';
+import { useInlinedImages } from '@/lib/preview/use-inlined-images';
 import { buildPreviewDocument } from '@/lib/preview/preview-document';
 import type { SourceMap } from '@/lib/preview/instrument';
 import { cn, formatBytes } from '@/lib/utils';
@@ -61,6 +64,8 @@ export interface LandingPreviewProps {
   html: string;
   /** Muestra el indicador de generacion en curso. */
   generating?: boolean;
+  /** Texto del indicador de generacion (p. ej. cuando tambien se generan imagenes). */
+  generatingLabel?: string;
   title?: string;
   className?: string;
   /** Altura del area de preview cuando no esta en pantalla completa. */
@@ -83,6 +88,7 @@ export interface LandingPreviewProps {
 export function LandingPreview({
   html,
   generating = false,
+  generatingLabel = 'Generando Landing Page...',
   title = 'Vista previa de la Landing Page',
   className,
   heightClassName = 'h-[clamp(420px,62vh,780px)]',
@@ -176,7 +182,10 @@ export function LandingPreview({
 
   // Con el inspector disponible no se carga nada hasta tener el documento
   // instrumentado (evita cargar primero el limpio y recargar al segundo).
-  const srcDoc = !inspectable || inspectorFailed ? html : (doc?.srcDoc ?? null);
+  const rawSrcDoc = !inspectable || inspectorFailed ? html : (doc?.srcDoc ?? null);
+  // El iframe es un origen opaco y desde ahi no se pueden pedir las imagenes generadas por URL
+  // (ver `inline-images.ts`): se le entrega el documento con ellas incrustadas como `data:`.
+  const srcDoc = useInlinedImages(rawSrcDoc);
 
   useEffect(() => {
     if (quietUpdates && hasLoadedOnce.current) return;
@@ -243,11 +252,24 @@ export function LandingPreview({
     };
   }, [fullscreen]);
 
-  const openInNewTab = useCallback(() => {
+  const openInNewTab = useCallback(async () => {
+    // Una pestana `blob:` no resuelve URLs relativas: las imagenes generadas
+    // (`/api/landing-images/...`) se incrustan antes de abrirla. La pestana se abre YA,
+    // dentro del clic, para que el bloqueador de ventanas no la tome por una
+    // apertura sin gesto del usuario mientras se descargan las imagenes.
+    const hasImages = html.includes(IMAGE_ROUTE_PREFIX);
+    const tab = hasImages ? window.open('', '_blank') : null;
+
     // Siempre el HTML limpio, sin las marcas ni el script del inspector.
-    const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+    const exported = hasImages ? (await inlineLandingImages(html)).html : html;
+    const blob = new Blob([exported], { type: 'text/html;charset=utf-8' });
     const url = URL.createObjectURL(blob);
-    window.open(url, '_blank', 'noopener,noreferrer');
+    if (tab) {
+      tab.opener = null;
+      tab.location.href = url;
+    } else {
+      window.open(url, '_blank', 'noopener,noreferrer');
+    }
     // Se revoca con retraso para que el navegador llegue a cargar el documento.
     setTimeout(() => URL.revokeObjectURL(url), 60_000);
   }, [html]);
@@ -306,7 +328,7 @@ export function LandingPreview({
         >
           <span className="inline-flex items-center gap-2 border border-line bg-panel px-3 py-2 text-sm text-muted">
             <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-            {generating ? 'Generando Landing Page...' : 'Cargando vista previa...'}
+            {generating ? generatingLabel : 'Cargando vista previa...'}
           </span>
         </div>
       )}

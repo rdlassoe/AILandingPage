@@ -50,6 +50,9 @@ export function buildLandingPrompt(input: PromptBuildInput): BuiltPrompt {
   const randomSeedString = techniques.some((technique) => technique.id === 'seed-strings')
     ? input.randomSeedString?.trim() || null
     : null;
+  // Con "Generacion de imagenes" elegida, OUTPUT_FORMAT deja de decir que las
+  // imagenes son SVG inline: el sistema rellena los marcadores `data-ai-image`.
+  const imagesRequested = techniques.some((technique) => technique.id === 'image-generation');
   const architecture = resolveArchitecture(project, input.define ?? project.define);
   const negativeConstraints = input.negativeConstraints.filter((item) => item.trim().length > 0);
   const discover = input.discover ?? project.discover;
@@ -266,7 +269,9 @@ export function buildLandingPrompt(input: PromptBuildInput): BuiltPrompt {
       '- El CSS va embebido en <style> dentro de <head>.',
       '- El JavaScript va embebido en <script> justo antes de </body>.',
       '- Sin recursos externos salvo los que el bloque TECHNOLOGY autorice explicitamente.',
-      '- Las imagenes se sustituyen por SVG inline o por bloques de color con texto alternativo real.',
+      imagesRequested
+        ? '- Las imagenes de contenido se piden con marcadores <img data-ai-image="..."> sin src (ver la tecnica activa); el resto de elementos graficos son SVG inline o bloques de color con texto alternativo real.'
+        : '- Las imagenes se sustituyen por SVG inline o por bloques de color con texto alternativo real.',
       '',
       'La respuesta empieza por "<!DOCTYPE html>" y termina en "</html>".',
       'Sin texto antes. Sin texto despues. Sin bloques de markdown.',

@@ -114,6 +114,36 @@ lugar de bajarlo.
 
 ---
 
+## Generación de imágenes (Cloudflare Workers AI)
+
+Opcional. La usa la técnica de diseño «Generación de imágenes»: el LLM deja marcadores
+`<img data-ai-image="…">` y el servidor los rellena con FLUX. **No es un proveedor de texto**: no
+se elige en el Prompt Studio ni compite con Gemini o Groq, y funciona con cualquiera de ellos (también
+con el modo demo). Sin las dos primeras variables, la técnica deja los marcadores con la descripción
+de cada imagen y el Prompt Studio lo avisa. Detalle, límites y errores en
+[`LLM_PROVIDERS.md`](LLM_PROVIDERS.md#generación-de-imágenes-cloudflare-workers-ai).
+
+| Variable | Ámbito | Por defecto | Para qué |
+| --- | --- | --- | --- |
+| `CLOUDFLARE_ACCOUNT_ID` | Solo servidor | vacío | Account ID del panel de Cloudflare. |
+| `CLOUDFLARE_API_TOKEN` | Solo servidor | vacío | Token con permisos *Workers AI – Read* y *Edit*. Se activa solo con cuenta **y** token. |
+| `CLOUDFLARE_IMAGE_MODEL` | Solo servidor | `@cf/black-forest-labs/flux-1-schnell` | Modelo. Solo admite los de entrada JSON; FLUX.2 usa multipart y no está soportado. |
+| `IMAGE_MAX_PER_LANDING` | Solo servidor | `4` | Marcadores que se generan por página (tope 8); el resto queda pendiente. |
+| `IMAGE_STEPS` | Solo servidor | `4` | Pasos de difusión de schnell (máximo 8). |
+| `IMAGE_TIMEOUT_MS` | Solo servidor | `30000` | Tiempo máximo **por imagen**. |
+| `IMAGE_STEP_BUDGET_MS` | Solo servidor | `45000` | Tiempo máximo de **todo** el paso de imágenes de una generación. |
+| `IMAGE_RATE_LIMIT_PER_HOUR` | Solo servidor | `30` | Imágenes por usuario y hora (limitador en memoria, cubo propio). |
+| `IMAGE_QUOTA_COOLDOWN_MS` | Solo servidor | `600000` | Tras un 429 de cuota agotada, no se vuelve a llamar a Cloudflare durante este tiempo. |
+| `IMAGE_STORAGE_COOLDOWN_MS` | Solo servidor | `60000` | Tras no poder **guardar** una imagen recién generada (falta el esquema de Supabase, políticas…), no se vuelve a llamar a Cloudflare durante este tiempo: cada intento gastaría neuronas en vano. |
+| `CLOUDFLARE_API_BASE_URL` | Solo servidor | API oficial | **Solo para pruebas** (`scripts/stub-cloudflare.mjs`). Se ignora si no es `https` ni `http://localhost`: el token nunca debe viajar en claro a otro host. |
+
+Cuota de la capa gratuita: **10 000 neuronas al día**, con reinicio a las 00:00 UTC. A 4 pasos,
+una imagen cuesta unas 43 neuronas a 512² y unas 58 a 1024², es decir, **de 170 a 230 imágenes al
+día** (unas 40-55 páginas con 4 imágenes). La resolución de salida de schnell no está documentada:
+mídela con `npm run verify:cloudflare` antes de fiarte de esas cuentas.
+
+---
+
 ## Límites y tiempos
 
 | Variable | Por defecto | Para qué |
@@ -139,10 +169,19 @@ export const env = {
   supabase: { url, anonKey, serviceRoleKey, enabled },
   gemini:   { apiKey, defaultModel, baseUrl },
   groq:     { apiKey, defaultModel, baseUrl },
+  ollama:   { baseUrl, defaultModel },
   llm:      { defaultProvider, timeoutMs },
+  cloudflare:{ accountId, apiToken, model, baseUrl, enabled },
+  images:   { maxPerLanding, steps, timeoutMs, stepBudgetMs, ratePerHour, quotaCooldownMs, storageCooldownMs, maxBytes },
   rateLimit:{ maxRequests, windowMs, cooldownMs },
 } as const;
 ```
+
+**Orden de declaración.** `env` se evalúa entera al importar el módulo, así que cualquier
+constante que use una función llamada desde el objeto (`CLOUDFLARE_DEFAULT_BASE_URL`) debe
+declararse **antes** de `export const env`. Una `const` posterior compila y pasa `tsc`, pero al
+arrancar sin la variable da `Cannot access 'x' before initialization` —lo destapó `npm run build`—.
+`npm run verify:images` lo comprueba arrancando `env.ts` con y sin variables.
 
 Lo único que viaja al cliente es `getRuntimeConfigSummary()`, que no contiene secretos:
 
@@ -151,7 +190,8 @@ Lo único que viaja al cliente es `getRuntimeConfigSummary()`, que no contiene s
   supabaseEnabled: boolean;
   storageMode: 'supabase' | 'local';
   defaultProvider: ProviderId;
-  providersConfigured: { mock: true, gemini: boolean, groq: boolean };
+  providersConfigured: { mock: true, gemini: boolean, groq: boolean, ollama: true };
+  imageGeneration: { provider: 'cloudflare', configured: boolean, model: string, maxPerLanding: number };
   timeoutMs: number;
   rateLimit: { maxRequests, windowMs, cooldownMs };
 }

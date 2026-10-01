@@ -26,10 +26,11 @@ Aplicando el esquema
 
 Estado de la base de datos
 
-OK    14 tablas presentes
+OK    15 tablas presentes
 OK    7 tipos enumerados presentes
 OK    Row Level Security activo en todas las tablas
-OK    22 politicas RLS definidas
+OK    23 politicas RLS definidas
+OK    Bucket publico `landing-images` presente
 OK    Catalogo cargado: 11 tecnologias, 9 plantillas, 17 modelos
 
 La base esta lista.
@@ -74,11 +75,19 @@ En el **SQL Editor** de tu proyecto, en este orden:
 
 | | |
 | --- | --- |
-| Tablas | 14 |
+| Tablas | 15 |
 | Tipos enumerados | 7 |
-| Índices | 41 |
+| Índices | 44 |
 | Triggers | 10 |
-| Políticas RLS | 22 |
+| Políticas RLS | 23 (más 2 sobre `storage.objects`) |
+| Buckets de Storage | 1 (`landing-images`, público) |
+
+> **Sin probar contra una base real.** La tabla `landing_images`, el bucket y las dos políticas de
+> `storage.objects` (en bloques `do $$ … $$` con guarda, para no romper un PostgreSQL sin Supabase
+> Storage) se escribieron sin ejecutar `db:setup` contra tu proyecto. Si falla, crea el bucket
+> `landing-images` **público** desde el panel de Supabase (Storage → New bucket, límite de 5 MB,
+> tipos `image/png`, `image/jpeg` e `image/webp`); `npm run db:check` avisa si falta o no es público.
+> La política de subida que necesita es `insert` para `authenticated` en ese bucket.
 
 Los tres archivos son **idempotentes**: repetirlos actualiza el catálogo y deja los datos
 intactos, sin duplicar filas. No requieren ninguna extensión: `gen_random_uuid()` forma
@@ -137,6 +146,10 @@ Una Landing Page nunca queda separada de su prompt: guarda `prompt_id`,
 que la produjo, con su Seed String, sus restricciones negativas y los conflictos de stack
 que se resolvieron.
 
+Las imágenes generadas cuelgan del proyecto y de la generación que las pidió (`landing_images`), y el
+HTML las referencia por `id`. «Reintentar imágenes» crea una `landing_version` con
+`label = 'Imagenes'` y `generation_id` nulo, que conserva la `prompt_version_id` de la página.
+
 Si el HTML vigente se editó a mano (`PUT /api/landings/[id]/html`), la cadena no cambia —la
 versión manual sigue apuntando a la misma `prompt_version`— pero ya no es cierto que ese prompt
 produjera *exactamente* ese HTML. La ficha lo indica con la insignia "editada a mano" cuando la
@@ -167,6 +180,7 @@ historial. Esa función **no cambió el esquema**: no hace falta volver a ejecut
 | `landing_versions` | Historial completo: una por generación, refinamiento y **edición manual**. | `unique (landing_page_id, version)`. Las manuales llevan `label = 'Edicion manual'` y `generation_id` nulo; conservan la `prompt_version_id` del HTML del que partieron. |
 | `generations` | Observabilidad de cada llamada. | Proveedor, modelo, estado, latencia, tokens, avisos. **Nunca claves.** |
 | `generation_reviews` | Salida del Critic Engine. | Issues, sugerencias, puntuaciones y prompt de refinamiento. |
+| `landing_images` | Metadatos de las imágenes generadas con IA (técnica «Generación de imágenes»). | Prompt, `alt`, MIME, bytes, dimensiones, modelo y latencia; `project_id` (`on delete cascade`) y `generation_id` (`on delete set null`). **Los bytes no están aquí**: viven en el bucket `landing-images` (clave = `id`) y el HTML los referencia como `/api/landing-images/<id>`. Sin `updated_at`: una imagen no se edita, se genera otra. |
 | `llm_providers` / `llm_models` | Catálogo informativo. | La disponibilidad real la decide el servidor por las variables de entorno. |
 
 ### Tipos enumerados
@@ -198,6 +212,7 @@ Excepciones deliberadas:
 | `landing_pages` con `status in ('public','featured')` | Lectura pública. |
 | `landing_versions` | Siempre privadas, aunque la página sea pública: se comparte la versión vigente, no el historial. |
 | `prompt_templates`, `llm_providers`, `llm_models`, `landing_categories` | Solo lectura. |
+| Bucket `landing-images` (Storage) | **Lectura pública a propósito**: la URL (con un `uuid` v4) es la única capacidad de lectura, y `GET /api/landing-images/[id]` la sirve sin sesión (decisión 12 de [`ARCHITECTURE.md`](ARCHITECTURE.md)). La escritura sí está restringida: `insert` solo en ese bucket y `delete` solo de lo propio (`owner_id = auth.uid()`). Los metadatos (`landing_images`) siguen siendo privados. |
 
 `project_technologies` no tiene `owner_id`: hereda el permiso del proyecto mediante un
 `exists` sobre `projects`.
@@ -254,6 +269,10 @@ Diferencias respecto a producción:
 - La identidad es una cookie sin contraseña: separa espacios de trabajo, **no autentica**.
 - El catálogo se refresca desde el código en cada arranque, conservando lo que haya creado
   el usuario.
+- Las imágenes generadas no van a `db.json` (lo reescribiría entero en cada escritura): los bytes
+  se guardan en `./.data/images/<id>.<png|jpg|webp>` y solo los metadatos en el JSON. Borrar un
+  proyecto borra también sus ficheros. Al pasar de modo local a Supabase, `/api/landing-images/[id]`
+  busca primero en disco y después redirige al bucket, así que el HTML no cambia.
 
 `./.data` está en `.gitignore`. Para empezar de cero: para el servidor, borra la carpeta y
 vuelve a arrancar (la base vive también en memoria del proceso mientras corre).

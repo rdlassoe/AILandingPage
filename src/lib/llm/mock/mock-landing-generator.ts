@@ -489,6 +489,19 @@ export interface MockLandingOptions {
   formPrivacyNote: boolean;
   illustration: boolean;
   favicon: boolean;
+  /**
+   * El prompt pide imagenes generadas (tecnica "Generacion de imagenes"): la
+   * pagina deja un marcador `<img data-ai-image>` en el hero. El demo NO genera
+   * la imagen: la genera el servidor, con Cloudflare, igual que con cualquier
+   * otro modelo. Sin credenciales queda el marcador.
+   */
+  imageSlot: boolean;
+  /**
+   * Etiqueta `<img data-ai-image ...>` que ya tenia la version actual (con su
+   * `src` si ya se genero). Al refinar se conserva tal cual: la pagina se
+   * reconstruye desde el encargo y, sin esto, perderia la imagen ya generada.
+   */
+  keptImage: string | null;
 }
 
 export const DEFAULT_MOCK_OPTIONS: MockLandingOptions = {
@@ -497,7 +510,18 @@ export const DEFAULT_MOCK_OPTIONS: MockLandingOptions = {
   formPrivacyNote: false,
   illustration: false,
   favicon: false,
+  imageSlot: false,
+  keptImage: null,
 };
+
+/**
+ * Marcador de imagen del hero. El prompt va en ingles porque FLUX lo entiende
+ * mejor; el `alt`, en el idioma de la pagina.
+ */
+function heroImageTag(brief: MockBrief): string {
+  const prompt = `${brief.style} editorial photograph about ${brief.theme}, natural light, restrained palette, no people in the foreground`;
+  return `<img class="hero__photo" data-ai-image="${escapeHtml(prompt.slice(0, 300))}" alt="Imagen ilustrativa: ${escapeHtml(brief.theme)}" width="1024" height="1024" loading="lazy">`;
+}
 
 export function generateMockLanding(
   brief: MockBrief,
@@ -513,6 +537,7 @@ export function generateMockLanding(
   const showFaq = sectionRequested(brief, ['faq', 'pregunta', 'duda'], true);
 
   const e = escapeHtml;
+  const heroImage = options.keptImage ?? (options.imageSlot ? heroImageTag(brief) : null);
   const title = `${e(copy.headline)} | ${e(brief.name)}`;
   const description = e(copy.subhead).slice(0, 155);
 
@@ -668,6 +693,8 @@ section{padding-block:var(--section-gap)}
 .form__note{font-size:.82rem;color:var(--muted);margin:.35rem 0 0}
 .hero__diagram{margin-top:var(--space-3);border-top:1px solid var(--border);padding-top:var(--space-2)}
 .hero__diagram svg{width:100%;height:auto;display:block}
+.hero__figure{margin:var(--space-3) 0 0}
+.hero__figure img{display:block;width:100%;height:auto;aspect-ratio:1/1;object-fit:cover;background:var(--surface);border:var(--border-width) solid var(--border);border-radius:var(--radius)}
 
 /* ---------- pie ---------- */
 .site-footer{border-top:var(--border-width) solid var(--border);padding-block:var(--space-4);font-size:.9rem;color:var(--muted)}
@@ -738,6 +765,7 @@ section{padding-block:var(--section-gap)}
           <div><dt>Que resuelve</dt><dd>${e(brief.theme)}</dd></div>
           <div><dt>Direccion visual</dt><dd>${e(brief.style)}</dd></div>
         </dl>
+        ${heroImage ? `<figure class="hero__figure">${heroImage}</figure>` : ''}
         ${options.illustration ? heroDiagram(preset) : ''}
       </aside>
     </div>

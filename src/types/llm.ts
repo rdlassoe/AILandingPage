@@ -117,17 +117,24 @@ export type LLMErrorCode =
   | 'content_filter'
   | 'unknown';
 
+/**
+ * Origen de un error HTTP: un proveedor de texto o el de imagenes. Cloudflare
+ * NO es un `ProviderId` (es un enum de Postgres y alimenta los selectores de
+ * proveedor): solo reutiliza el transporte de `postJson`.
+ */
+export type ErrorSource = ProviderId | 'cloudflare';
+
 /** Error normalizado: todos los adaptadores traducen sus fallos a esta clase. */
 export class LLMError extends Error {
   readonly code: LLMErrorCode;
-  readonly provider: ProviderId;
+  readonly provider: ErrorSource;
   readonly status?: number;
   readonly retryable: boolean;
   readonly hint?: string;
 
   constructor(params: {
     code: LLMErrorCode;
-    provider: ProviderId;
+    provider: ErrorSource;
     message: string;
     status?: number;
     retryable?: boolean;

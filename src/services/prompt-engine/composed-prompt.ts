@@ -46,7 +46,7 @@ const TECHNIQUE_FINGERPRINTS: Record<DesignTechniqueId, readonly string[]> = {
   'seed-strings': ['no es un adorno tematico', 'podria haberse generado con cualquier otra seed'],
   'ambitious-prompts': ['sesgos cognitivos que puedes aprovechar', 'que respuesta emocional exacta buscas'],
   'subagent-feedback': ['actua como tu propio critico', 'al menos 3 puntos de friccion'],
-  'image-generation': ['<!-- imagen:', 'lista para pegar en un generador de imagenes'],
+  'image-generation': ['data-ai-image="[prompt en ingles]"', 'escribe un marcador sin atributo src'],
   'video-generation': ['<!-- video:', 'generador de video (runway'],
   'subtractive-design': [
     'maximo 6 secciones en el cuerpo',

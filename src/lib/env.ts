@@ -10,6 +10,10 @@ import type { ProviderId } from '@/types/llm';
  * lo importa por error, el build falla en lugar de filtrar claves al bundle.
  */
 
+// Declarada ANTES de `env`: `normalizeCloudflareBaseUrl` la usa al evaluar el objeto, y una
+// `const` posterior daria "Cannot access before initialization" al arrancar sin la variable.
+const CLOUDFLARE_DEFAULT_BASE_URL = 'https://api.cloudflare.com/client/v4';
+
 function str(value: string | undefined, fallback = ''): string {
   const v = (value ?? '').trim();
   return v.length > 0 ? v : fallback;
@@ -60,12 +64,70 @@ export const env = {
     timeoutMs: int(process.env.LLM_TIMEOUT_MS, 90_000),
   },
 
+  // Generacion de imagenes (tecnica "Generacion de imagenes"). Cloudflare NO es
+  // un `ProviderId`: no compite con Gemini/Groq, solo pinta los marcadores
+  // `data-ai-image` que deja el LLM. Ver docs/LLM_PROVIDERS.md.
+  cloudflare: {
+    accountId: str(process.env.CLOUDFLARE_ACCOUNT_ID),
+    apiToken: str(process.env.CLOUDFLARE_API_TOKEN),
+    // schnell: Apache-2.0, rapido y el mas barato en neuronas. FLUX.2 usa
+    // multipart en vez de JSON y no esta soportado.
+    model: str(process.env.CLOUDFLARE_IMAGE_MODEL, '@cf/black-forest-labs/flux-1-schnell'),
+    baseUrl: normalizeCloudflareBaseUrl(process.env.CLOUDFLARE_API_BASE_URL),
+    /** Solo se activa con cuenta Y token, igual que Supabase con URL y anon key. */
+    enabled: str(process.env.CLOUDFLARE_ACCOUNT_ID).length > 0 && str(process.env.CLOUDFLARE_API_TOKEN).length > 0,
+  },
+
+  images: {
+    /** Marcadores que se generan por landing: el resto queda como marcador pendiente. */
+    maxPerLanding: Math.min(8, int(process.env.IMAGE_MAX_PER_LANDING, 4)),
+    /** Pasos de difusion de schnell (maximo 8 segun Cloudflare; 4 es su valor por defecto). */
+    steps: Math.min(8, int(process.env.IMAGE_STEPS, 4)),
+    timeoutMs: int(process.env.IMAGE_TIMEOUT_MS, 30_000),
+    /** Tiempo maximo de TODO el paso de imagenes de una generacion. */
+    stepBudgetMs: int(process.env.IMAGE_STEP_BUDGET_MS, 45_000),
+    ratePerHour: int(process.env.IMAGE_RATE_LIMIT_PER_HOUR, 30),
+    /**
+     * Tras un 429 de "cuota diaria agotada" no se vuelve a llamar a Cloudflare
+     * durante este tiempo. No se fija a "hasta las 00:00 UTC" a proposito: hay
+     * reportes de cuotas que siguen bloqueadas despues del reinicio.
+     */
+    quotaCooldownMs: int(process.env.IMAGE_QUOTA_COOLDOWN_MS, 600_000),
+    /**
+     * Tras no poder GUARDAR una imagen recien generada (falta la tabla o el bucket,
+     * politicas...), no se vuelve a llamar a Cloudflare durante este tiempo: cada
+     * intento gastaria ~58 neuronas para tirar la imagen. Corto a proposito: en cuanto
+     * se arregla el almacen, el siguiente intento debe poder salir bien.
+     */
+    storageCooldownMs: int(process.env.IMAGE_STORAGE_COOLDOWN_MS, 60_000),
+    /** Tope de una imagen descargada: lo que supere esto no es una imagen de landing. */
+    maxBytes: 5 * 1024 * 1024,
+  },
+
   rateLimit: {
     maxRequests: int(process.env.RATE_LIMIT_MAX_REQUESTS, 20),
     windowMs: int(process.env.RATE_LIMIT_WINDOW_MS, 3_600_000),
     cooldownMs: int(process.env.RATE_LIMIT_COOLDOWN_MS, 3_000),
   },
 } as const;
+
+/**
+ * `CLOUDFLARE_API_BASE_URL` existe para apuntar las pruebas a un servidor
+ * local (`scripts/stub-cloudflare.mjs`). Un valor que no sea https ni
+ * localhost se ignora: la clave nunca debe viajar en claro a otro host.
+ */
+function normalizeCloudflareBaseUrl(raw: string | undefined): string {
+  const value = str(raw).replace(/\/+$/, '');
+  if (!value) return CLOUDFLARE_DEFAULT_BASE_URL;
+  try {
+    const url = new URL(value);
+    const local = url.hostname === 'localhost' || url.hostname === '127.0.0.1' || url.hostname === '[::1]';
+    if (url.protocol === 'https:' || (url.protocol === 'http:' && local)) return value;
+  } catch {
+    // cae al valor por defecto
+  }
+  return CLOUDFLARE_DEFAULT_BASE_URL;
+}
 
 function normalizeProvider(raw: string | undefined): ProviderId {
   const value = str(raw, 'mock').toLowerCase();
@@ -79,6 +141,8 @@ export interface RuntimeConfigSummary {
   storageMode: 'supabase' | 'local';
   defaultProvider: ProviderId;
   providersConfigured: Record<ProviderId, boolean>;
+  /** Generacion de imagenes: si hay credenciales de Cloudflare y con que modelo. */
+  imageGeneration: { provider: 'cloudflare'; configured: boolean; model: string; maxPerLanding: number };
   timeoutMs: number;
   rateLimit: { maxRequests: number; windowMs: number; cooldownMs: number };
 }
@@ -96,6 +160,12 @@ export function getRuntimeConfigSummary(): RuntimeConfigSummary {
       // pedir. La disponibilidad real (si Ollama esta corriendo) se ve al
       // probar la conexion, igual que con cualquier otro proveedor.
       ollama: true,
+    },
+    imageGeneration: {
+      provider: 'cloudflare',
+      configured: env.cloudflare.enabled,
+      model: env.cloudflare.model,
+      maxPerLanding: env.images.maxPerLanding,
     },
     timeoutMs: env.llm.timeoutMs,
     rateLimit: { ...env.rateLimit },

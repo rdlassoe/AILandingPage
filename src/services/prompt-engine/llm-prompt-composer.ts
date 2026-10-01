@@ -69,12 +69,12 @@ function buildComposerSystem(draft: BuiltPrompt): string {
           `La seccion ${SECTION_TITLES.SUBTRACTIVE_DESIGN} contiene las UNICAS tecnicas de diseno que`,
           'eligio el usuario. No apliques, menciones ni anadas ninguna otra',
           'tecnica (auditorias, limites de secciones, bucles de revision,',
-          'descripciones de imagenes o de video...) en ninguna otra seccion.',
+          'generacion de imagenes o de video...) en ninguna otra seccion.',
         ]
       : [
           'El usuario NO eligio ninguna tecnica de diseno. No escribas una',
           `seccion ${SECTION_TITLES.SUBTRACTIVE_DESIGN} ni incorpores tecnicas (auditorias, limites de`,
-          'secciones, bucles de revision, descripciones de imagenes o de',
+          'secciones, bucles de revision, generacion de imagenes o de',
           'video...) en ninguna seccion.',
         ],
     has(draft, 'SEED_STRING')

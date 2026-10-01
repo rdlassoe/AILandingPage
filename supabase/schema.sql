@@ -428,6 +428,50 @@ create trigger generation_reviews_updated_at before update on generation_reviews
   for each row execute function set_updated_at();
 
 -- ---------------------------------------------------------------------------
+-- landing_images (imagenes generadas con IA para las Landing Pages)
+--
+-- Aqui solo estan los METADATOS. Los bytes viven en el bucket `landing-images`
+-- de Supabase Storage (clave = id) y el HTML los referencia como
+-- `/api/landing-images/<id>`: nunca se incrustan en `landing_pages.html`.
+-- No hay `updated_at`: una imagen no se edita, se genera otra.
+-- ---------------------------------------------------------------------------
+
+create table if not exists landing_images (
+  id            uuid primary key default gen_random_uuid(),
+  owner_id      uuid not null references profiles(id) on delete cascade,
+  project_id    uuid not null references projects(id) on delete cascade,
+  generation_id uuid references generations(id) on delete set null,
+  prompt        text not null,
+  alt           text not null default '',
+  mime          text not null check (mime in ('image/png', 'image/jpeg', 'image/webp')),
+  bytes         integer not null check (bytes > 0),
+  width         integer,
+  height        integer,
+  model         text not null default '',
+  latency_ms    integer not null default 0,
+  created_at    timestamptz not null default now()
+);
+
+create index if not exists landing_images_owner_idx on landing_images (owner_id, created_at desc);
+create index if not exists landing_images_project_idx on landing_images (project_id);
+
+-- Bucket PUBLICO a proposito: la vista previa corre en un iframe sandbox sin
+-- cookies, asi que la URL (con un uuid v4 imposible de adivinar) es la unica
+-- capacidad de lectura posible. La ESCRITURA si esta restringida por politicas
+-- (ver policies.sql). Se guarda dentro de un bloque con guarda para que el
+-- esquema siga aplicandose en un PostgreSQL sin Supabase Storage.
+do $$ begin
+  if to_regclass('storage.buckets') is not null then
+    insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+    values ('landing-images', 'landing-images', true, 5242880, array['image/png', 'image/jpeg', 'image/webp'])
+    on conflict (id) do update
+      set public = excluded.public,
+          file_size_limit = excluded.file_size_limit,
+          allowed_mime_types = excluded.allowed_mime_types;
+  end if;
+end $$;
+
+-- ---------------------------------------------------------------------------
 -- llm_providers y llm_models (catalogo informativo)
 -- El estado real de configuracion se decide en el servidor a partir de las
 -- variables de entorno: estas tablas solo describen el catalogo.

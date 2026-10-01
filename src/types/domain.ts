@@ -383,6 +383,37 @@ export interface LandingVersion extends Timestamps {
  */
 export const MANUAL_EDIT_LABEL = 'Edicion manual';
 
+/**
+ * Etiqueta de la `landing_version` que crea "Reintentar imagenes": el HTML es
+ * el mismo salvo por los marcadores que por fin se han podido generar.
+ */
+export const IMAGES_LABEL = 'Imagenes';
+
+export type LandingImageMime = 'image/png' | 'image/jpeg' | 'image/webp';
+
+/**
+ * Metadatos de una imagen generada con IA para una Landing Page. Los bytes no
+ * estan aqui: el HTML los referencia como `/api/landing-images/<id>` y viven
+ * en `.data/images/<id>` (modo local) o en el bucket publico `landing-images`
+ * de Supabase Storage. El HTML guardado nunca lleva la imagen incrustada.
+ */
+export interface LandingImage {
+  id: string;
+  ownerId: string;
+  projectId: string;
+  generationId: string | null;
+  /** Prompt (en ingles) con el que se genero, tal y como lo escribio el LLM. */
+  prompt: string;
+  alt: string;
+  mime: LandingImageMime;
+  bytes: number;
+  width: number | null;
+  height: number | null;
+  model: string;
+  latencyMs: number;
+  createdAt: string;
+}
+
 /* -------------------------------------------------------------------------
  * Critic Engine
  * ---------------------------------------------------------------------- */
