@@ -163,10 +163,13 @@ resto del prompt, no este motor:
 - **Con un proveedor real**, el propio `composePromptViaLLM` (ver más abajo) recibe el string
   dentro de la sección `SEED STRING` del borrador y la instrucción de manipularlo; escribe la
   dirección resultante ahí mismo, aplicándola también al resto de su redacción.
-- **En modo demo**, `brief-parser.ts` extrae el string de la sección y lo hashea (suma de
-  códigos + módulo) para elegir una de las 13 familias de estilo internas del Mock Provider
-  (`SeedCategory` en `src/types/domain.ts`) — el mismo principio, hecho en código en vez de
-  con razonamiento.
+- **En modo demo**, nadie manipula el string: `brief-parser.ts` lo extrae de la sección y busca
+  palabras clave en él (`detectSeedCategory`) para elegir una de las 13 familias de estilo internas
+  del Mock Provider (`SeedCategory` en `src/types/domain.ts`). **No es un hash**, y con un string
+  aleatorio solo acierta por casualidad: medido con 5 000 strings, el 83 % da «editorial» (la
+  familia por defecto) y el 17 % «retro-tech» (por contener «80» en el hexadecimal); las otras 11
+  no salen nunca. Es una discrepancia con la intención original, señalada en la decisión 9 de
+  [`ARCHITECTURE.md`](ARCHITECTURE.md).
 
 `renderSeedBlock(randomString)` es todo lo que queda de la función que antes traducía la Seed:
 ahora solo compone el bloque `- String aleatorio: ...` más la instrucción de la técnica, sin

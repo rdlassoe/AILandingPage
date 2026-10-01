@@ -10,6 +10,13 @@
 > pasó a ser opcional (`string | null`) y `seedStringValue` queda a `null` en ese caso. Ver
 > [`PROMPT_ENGINE.md`](PROMPT_ENGINE.md#seed-string-engine). Lo demás de la migración no cambia.
 
+> **Corrección (2026-09-30): el Mock no hashea el string.** Donde este documento dice que el Mock
+> deriva la familia de estilo "hasheando" el string aleatorio (o habla del "hash determinista del
+> Mock Provider"), esa fue la intención, pero el código de `brief-parser.ts` solo busca palabras clave
+> (`detectSeedCategory`). Con un string aleatorio salen únicamente «editorial» (83 %) y «retro-tech»
+> (17 %, por contener «80» en el hexadecimal), de 13 familias. Implementar el hash está pendiente:
+> cambiaría el aspecto del demo y lo que ve el crítico, así que conviene revisar `verify:flow`.
+
 ---
 
 ## Qué se pidió

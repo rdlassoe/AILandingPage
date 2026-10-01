@@ -78,7 +78,7 @@ En el **SQL Editor** de tu proyecto, en este orden:
 | Tablas | 15 |
 | Tipos enumerados | 7 |
 | Índices | 44 |
-| Triggers | 10 |
+| Triggers | 10 (`updated_at`) + `on_auth_user_created` sobre `auth.users` |
 | Políticas RLS | 23 (más 2 sobre `storage.objects`) |
 | Buckets de Storage | 1 (`landing-images`, público) |
 
@@ -131,8 +131,11 @@ projects           prompts       landing_pages    generations   generation_revie
     ├──► project_technologies            ├──► landing_versions         │
     │         │                          └─────────────────────────────┘
     │         ▼
-    └──► technologies        prompt_templates
-         (catálogo + propias)  (catálogo)
+    ├──► technologies        prompt_templates
+    │    (catálogo + propias)  (catálogo)
+    │
+    └──► landing_images   (metadatos; los bytes, en el bucket `landing-images`;
+                           también cuelga de generations, on delete set null)
 ```
 
 ### Cadena de trazabilidad

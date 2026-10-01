@@ -137,10 +137,12 @@ de cada imagen y el Prompt Studio lo avisa. Detalle, límites y errores en
 | `IMAGE_STORAGE_COOLDOWN_MS` | Solo servidor | `60000` | Tras no poder **guardar** una imagen recién generada (falta el esquema de Supabase, políticas…), no se vuelve a llamar a Cloudflare durante este tiempo: cada intento gastaría neuronas en vano. |
 | `CLOUDFLARE_API_BASE_URL` | Solo servidor | API oficial | **Solo para pruebas** (`scripts/stub-cloudflare.mjs`). Se ignora si no es `https` ni `http://localhost`: el token nunca debe viajar en claro a otro host. |
 
-Cuota de la capa gratuita: **10 000 neuronas al día**, con reinicio a las 00:00 UTC. A 4 pasos,
-una imagen cuesta unas 43 neuronas a 512² y unas 58 a 1024², es decir, **de 170 a 230 imágenes al
-día** (unas 40-55 páginas con 4 imágenes). La resolución de salida de schnell no está documentada:
-mídela con `npm run verify:cloudflare` antes de fiarte de esas cuentas.
+Cuota de la capa gratuita: **10 000 neuronas al día**, con reinicio a las 00:00 UTC. Cloudflare
+no documenta la resolución de salida de schnell; medida con `npm run verify:cloudflare`
+(2026-09-30) es un **JPEG de 1024×1024** de ~500 KB. A 4 pasos son ~57,6 neuronas por imagen según
+la página de precios (4 teselas de 512² × 4,8 + 4 pasos × 9,6), es decir, **~173 imágenes al día**
+(~43 páginas con 4 imágenes). Es una estimación de los precios publicados: contrástala con el panel
+de Cloudflare (Workers AI → Usage).
 
 ---
 

@@ -70,8 +70,8 @@ export function ImageProviderSettings({
 
         <p className="text-xs text-muted">
           Genera las imagenes de la tecnica «Generacion de imagenes» (hasta {maxPerLanding} por pagina) con{' '}
-          <span className="font-mono">{model}</span>. La capa gratuita da 10 000 neuronas al dia, de unas 170 a 230
-          imagenes segun su resolucion. Sin credenciales, la tecnica deja marcadores con la descripcion de cada
+          <span className="font-mono">{model}</span>. La capa gratuita da 10 000 neuronas al dia: unas 170 imagenes
+          de 1024x1024. Sin credenciales, la tecnica deja marcadores con la descripcion de cada
           imagen. «Probar conexion» genera una imagen de un solo paso (unas pocas decenas de neuronas).
         </p>
 

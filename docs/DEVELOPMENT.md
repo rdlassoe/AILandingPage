@@ -29,7 +29,8 @@ npm run verify:supabase  # esquema, RLS y mappers contra la base real
 
 ## Cómo se construyó
 
-Nueve fases, cada una verificada antes de pasar a la siguiente; después se añadió una décima.
+Nueve fases, cada una verificada antes de pasar a la siguiente; después se añadieron una décima y
+una undécima.
 
 | Fase | Contenido | Estado |
 | --- | --- | --- |
@@ -43,6 +44,7 @@ Nueve fases, cada una verificada antes de pasar a la siguiente; después se aña
 | 8 | Landing Library: almacenamiento, búsqueda, filtros, reutilización. | Completa |
 | 9 | QA: errores, responsive, seguridad, accesibilidad, rendimiento. | Completa |
 | 10 | Editor de código e inspector: editar el HTML generado, guardarlo como versión y saltar a la línea de cada elemento (decisión 11). | Completa, salvo la localización de reglas CSS (ver "Límites conocidos") |
+| 11 | Imágenes generadas con IA: la técnica «Generación de imágenes» rellena marcadores con FLUX (Cloudflare Workers AI), los guarda aparte y los reintenta si fallan (decisión 12). | Completa. Verificada contra el stub, contra la API real de Cloudflare y en modo local con Groq; **el esquema de Supabase (`landing_images` y el bucket) aún hay que aplicarlo con `db:setup`**. |
 
 ---
 
@@ -234,8 +236,9 @@ npm run verify:flow  # en otra: modo demo, sin Supabase ni claves
 
 Recorre crear proyecto → DISCOVER → componer prompt → generar → validar → auditar →
 refinar → variante → versiones → biblioteca → reutilizar → edición manual del HTML, y
-comprueba además el aislamiento entre cuentas, el 401 sin sesión y el 422 ante entrada
-inválida. La edición manual cubre `PUT /api/landings/[id]/html`: versión nueva y vigente, HTML
+comprueba además que el prompt lleve solo las técnicas elegidas (`POST /api/prompts/compose` con
+`[]` y con una técnica suelta), el aislamiento entre cuentas, el 401 sin sesión y el 422 ante
+entrada inválida. Las imágenes tienen su propio recorrido (`verify:images-flow`, más abajo). La edición manual cubre `PUT /api/landings/[id]/html`: versión nueva y vigente, HTML
 guardado tal cual, no-op sin cambios, `422` ante un HTML vacío o un fragmento, `409` con una
 versión base desfasada, `403` sobre una página pública de otra cuenta, y que el crítico
 audita el HTML editado. Sale con
@@ -407,11 +410,21 @@ clave en el tema del proyecto (`__fail_twice__`, `__quota__`…, ver la cabecera
   descargar y copiar con imágenes incrustadas) y el panel de Ajustes.
 
 **`verify:cloudflare`** es la única prueba contra la API real: mide formato y **resolución** de la
-salida de schnell (no documentados), la latencia y las neuronas estimadas por imagen, y guarda las
-imágenes en `.data/cloudflare-spike/`. Necesita `CLOUDFLARE_ACCOUNT_ID` y `CLOUDFLARE_API_TOKEN` en
-`.env.local`; sin ellas, explica cómo conseguirlos y sale con código 2. **Aún no se ha ejecutado con
-credenciales reales**: todo lo demás se verificó contra el stub, que imita la documentación de
-Cloudflare, no la API.
+salida de schnell (Cloudflare no los documenta), la latencia y las neuronas estimadas por imagen, y
+guarda las imágenes en `.data/cloudflare-spike/`. Necesita `CLOUDFLARE_ACCOUNT_ID` y
+`CLOUDFLARE_API_TOKEN` en `.env.local`; sin ellas, explica cómo conseguirlos y sale con código 2.
+
+Ejecutada el 2026-09-30 con credenciales reales: **`image/jpeg` de 1024×1024**, 486-545 KB, ~1,9 s a
+4 pasos (5,7 s la primera llamada), ~57,6 neuronas estimadas por imagen → ~173 al día (~43 páginas de
+4). La estimación sale de la página de precios; falta contrastarla con el panel de Cloudflare. El
+resto de verificaciones usan el stub, que imita la documentación de Cloudflare, no la API: el stub
+devuelve un PNG de 64×64, la API real un JPEG de 1024×1024 (ambos formatos están cubiertos).
+
+**Diagnóstico de «no se genera la imagen».** Es una cadena de cinco eslabones y conviene mirarla en
+orden: ① credenciales (`verify:cloudflare`), ② que el LLM deje los marcadores (el aviso «el modelo no
+dejó ningún marcador» lo dice), ③ que la técnica estuviera elegida **antes** de pulsar «Generar
+prompt», ④ que se pueda guardar (`npm run db:check`: con Supabase hace falta `db:setup`) y ⑤ la
+cuota. Cada fallo llega a la interfaz como aviso con su causa.
 
 ### Editor de código e inspector
 
@@ -533,9 +546,9 @@ Aplicada tanto a la aplicación como a lo que genera:
   comprobó con respuestas simuladas, no con un modelo real. Detalle en
   [`PROMPT_ENGINE.md`](PROMPT_ENGINE.md#con-el-llm-qué-se-garantiza-y-qué-no).
 - **Imágenes generadas** (decisión 12):
-  - La cuota gratuita de Cloudflare (10 000 neuronas/día, ~170-230 imágenes) es de la cuenta y hay
-    reportes de 429/`4006` que persisten tras el reinicio de las 00:00 UTC. Resolución y formato de
-    schnell: por medir (`verify:cloudflare`).
+  - La cuota gratuita de Cloudflare (10 000 neuronas/día, ~173 imágenes de 1024×1024 JPEG) es de la
+    cuenta y hay reportes de 429/`4006` que persisten tras el reinicio de las 00:00 UTC. El coste
+    por imagen es una estimación de la página de precios, aún sin contrastar con el panel.
   - La generación es una sola petición: no hay progreso por imagen (haría falta streaming), y el
     paso de imágenes tiene un plazo de 45 s; lo que no quepa queda pendiente y se reintenta.
   - Solo se generan los marcadores del HTML en la generación inicial; refinar y variar conservan

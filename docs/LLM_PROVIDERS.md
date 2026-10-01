@@ -70,9 +70,13 @@ Un modelo que **no** esté en el catálogo sigue siendo utilizable: simplemente 
 Siempre disponible. No consume cuota ni envía datos a ningún servicio.
 
 - **Landing Pages.** Un generador determinista produce un documento HTML autocontenido,
-  semántico, responsive y accesible, con estilo variable según la categoría de la Seed
-  String (suizo, Bauhaus, brutalista, industrial, retro, lujo, editorial…). El JavaScript
-  embebido funciona de verdad: menú móvil, acordeón de preguntas y validación de formulario.
+  semántico, responsive y accesible. Tiene 13 familias de estilo (suizo, Bauhaus, brutalista,
+  industrial, retro, lujo, editorial…), pero **hoy solo salen dos**: la familia se elige buscando
+  palabras clave en el string aleatorio de la Seed y, con un string aleatorio, el 83 % de las veces
+  es «editorial» y el 17 % «retro-tech» (ver la decisión 9 de [`ARCHITECTURE.md`](ARCHITECTURE.md)).
+  El JavaScript embebido funciona de verdad: menú móvil, acordeón de preguntas y validación de
+  formulario. Con la técnica «Generación de imágenes» deja un marcador `<img data-ai-image>` en el
+  hero, que rellena el servidor con una imagen real: el HTML sigue etiquetado como demo.
 - **Auditorías.** Ejecuta comprobaciones estáticas reales sobre el HTML —`lang`, viewport,
   `alt`, jerarquía de encabezados, estilos de foco, etiquetas de formulario, media queries,
   Open Graph, JSON-LD, clichés de IA, exceso de degradados o de secciones— y construye el
@@ -260,10 +264,12 @@ Token con permisos *Workers AI – Read* y *Edit* (guía:
 sufijo `, no text, no letters, no logos, no watermark`, y la técnica pide al LLM contenedores con
 `aspect-ratio` y `object-fit: cover`.
 
-**Sin documentar, hay que medirlo:** formato y resolución de la imagen de salida. Nada se da por
-bueno: el cliente detecta PNG/JPEG/WebP por los primeros bytes (`src/lib/images/sniff.ts`), sirve la
-imagen con ese tipo —nunca con el que diga el proveedor— y rechaza lo que no lo sea o pase de 5 MB.
-`npm run verify:cloudflare` lo mide contra la API real (2 imágenes, unas decenas de neuronas).
+**Cloudflare no documenta el formato ni la resolución de salida; medidos contra la API real
+(2026-09-30):** `image/jpeg` de **1024×1024**, de 486 a 545 KB, en ~1,9 s a 4 pasos (5,7 s la
+primera llamada, a 1 paso). Aun así nada se da por bueno: el cliente detecta PNG/JPEG/WebP por los
+primeros bytes (`src/lib/images/sniff.ts`), sirve la imagen con ese tipo —nunca con el que diga el
+proveedor— y rechaza lo que no lo sea o pase de 5 MB. `npm run verify:cloudflare` lo vuelve a medir
+(2 imágenes, unas decenas de neuronas).
 
 ### Errores
 
@@ -284,8 +290,9 @@ El cliente hace **un intento**; los reintentos y la política de cuota viven en 
 
 - Capa gratuita: **10 000 neuronas al día** (reinicio 00:00 UTC) y 720 peticiones por minuto. Al
   agotarla, las operaciones fallan con 429. Coste de schnell según la página de precios: 4,8
-  neuronas por tesela de 512×512 más 9,6 por paso → ~43 neuronas (≈230 imágenes) a 512² y ~58
-  (≈170) a 1024², a 4 pasos.
+  neuronas por tesela de 512×512 más 9,6 por paso. Como la salida es de 1024×1024 (4 teselas), a 4
+  pasos son **~57,6 neuronas por imagen → ~173 imágenes al día** (~43 páginas de 4). Estimación de
+  los precios publicados, aún sin contrastar con el panel de Cloudflare.
 - **Riesgo conocido de la plataforma:** hay reportes de 429/`4006` que **persisten después del
   reinicio de las 00:00 UTC con el panel de Cloudflare en 0/10 000**. Por eso el freno de cuota
   (`src/lib/images/limits.ts`) dura `IMAGE_QUOTA_COOLDOWN_MS` (10 min) y los mensajes nunca prometen
@@ -434,7 +441,8 @@ Tres pasos, sin tocar el núcleo:
 **1. Añade su catálogo** a `src/lib/llm/models.ts`, verificando cada modelo con una llamada
 real.
 
-**2. Implementa la interfaz** en `src/lib/llm/openai-provider.ts`:
+**2. Implementa la interfaz** en un fichero nuevo (aquí `src/lib/llm/openai-provider.ts`, que es
+solo el ejemplo y **no existe**):
 
 ```ts
 export class OpenAIProvider implements LLMProvider {

@@ -16,6 +16,7 @@ PostgreSQL o a un JSON en disco.
 │  services/       Lógica de negocio pura                      │
 │    prompt-engine · llm-orchestrator · output-validator       │
 │    landing-generator · critic-engine · discover-engine       │
+│    image-generator  marcadores <img data-ai-image> → FLUX    │
 ├──────────────────────────────────────────────────────────────┤
 │  lib/                                                        │
 │    data/  DataStore ──┬── SupabaseDataStore                  │
@@ -26,6 +27,7 @@ PostgreSQL o a un JSON en disco.
 │                       └── MockProvider                       │
 │    auth/ · validation/ · env · errors · rate-limit           │
 │    preview/ · instrumentación y runtime del inspector        │
+│    images/  cliente Cloudflare · marcadores · límites        │
 ├──────────────────────────────────────────────────────────────┤
 │  types/          Contratos compartidos                       │
 └──────────────────────────────────────────────────────────────┘
@@ -265,9 +267,14 @@ más al LLM antes de guardarlo como versión definitiva:
 
 El **modo demo sigue siendo 100 % determinista**: usa el borrador de `buildLandingPrompt`
 sin pasar por la segunda llamada, y el string de la Seed (si está elegida) lo deriva un PRNG real
-(`generateRandomSeedForMock`, `crypto.randomBytes`), no un LLM. Como no hay razonamiento que
-lo manipule, `brief-parser.ts` (Mock) hashea el string en código para elegir una familia de
-estilo interna. `resolveProvider` decide esto mismo que decidirá el orquestador al ejecutar
+(`generateRandomSeedForMock`, `crypto.randomBytes`), no un LLM. Nadie manipula ese string en el
+demo: `brief-parser.ts` (Mock) **no lo hashea**, solo busca palabras clave en él
+(`detectSeedCategory`), y con un string aleatorio eso solo acierta por casualidad —medido con 5 000
+strings: el 83 % cae en «editorial» (la familia por defecto) y el 17 % en «retro-tech», por
+contener «80» en el hexadecimal; las otras 11 familias no salen nunca—. Es una discrepancia con la
+intención original (ver [`SEED_ENGINE_MIGRATION.md`](SEED_ENGINE_MIGRATION.md)) que se deja
+señalada en vez de corregirla a ciegas: variar el estilo del demo cambia lo que ve el crítico y
+puede descuadrar `verify:flow`. `resolveProvider` decide esto mismo que decidirá el orquestador al ejecutar
 de verdad, así que un proveedor real sin configurar tampoco llega a la llamada de
 composición: cae al mismo camino que el modo demo.
 
@@ -489,12 +496,18 @@ reescribiendo la etiqueta tal cual estaba.
 
 **Coste y límites conocidos.**
 
-- La cuota gratuita (10 000 neuronas/día, ~170-230 imágenes) es de la **cuenta** de Cloudflare, no de
-  un usuario; los limitadores (freno de cuota, imágenes por hora) viven en memoria de proceso. Hay
-  reportes de 429/`4006` que persisten tras el reinicio de las 00:00 UTC: el freno dura 10 min y los
-  mensajes no prometen el reinicio. Detalle en
+- La cuota gratuita (10 000 neuronas/día, ~173 imágenes) es de la **cuenta** de Cloudflare, no de
+  un usuario; los limitadores (freno de cuota, freno de almacenamiento, imágenes por hora) viven en
+  memoria de proceso. Hay reportes de 429/`4006` que persisten tras el reinicio de las 00:00 UTC: el
+  freno dura 10 min y los mensajes no prometen el reinicio. Detalle en
   [`LLM_PROVIDERS.md`](LLM_PROVIDERS.md#generación-de-imágenes-cloudflare-workers-ai).
-- La resolución y el formato de schnell no están documentados: `npm run verify:cloudflare` los mide.
+- **Freno de almacenamiento.** Si la imagen se genera pero no se puede guardar (con Supabase: falta
+  la tabla `landing_images` o el bucket porque no se ejecutó `npm run db:setup`), se abre un freno
+  de 60 s para no gastar ~58 neuronas por intento en tirar la imagen, y el aviso dice qué falta.
+- **Medido contra la API real (2026-09-30):** schnell devuelve **`image/jpeg` de 1024×1024**, de
+  486 a 545 KB, en ~1,9 s a 4 pasos (5,7 s la primera llamada, a 1 paso). Son ~57,6 neuronas por
+  imagen según la página de precios (4 teselas × 4,8 + 4 pasos × 9,6), es decir, ~173 al día. Esa
+  cifra sale de los precios publicados: falta contrastarla con el panel de Cloudflare.
 - No se pueden regenerar imágenes sueltas ni generar desde el editor: solo las pendientes.
 - Las imágenes cuelgan del proyecto (`on delete cascade`), no de la página: una variante comparte las
   de su original y borrar una página no borra sus imágenes.

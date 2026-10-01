@@ -2,7 +2,7 @@
  * Limites en memoria de la generacion de imagenes.
  *
  *   - Presupuesto por usuario y hora: protege la cuota gratuita de Cloudflare
- *     (10 000 neuronas al dia, ~170-230 imagenes) de un usuario que genere sin
+ *     (10 000 neuronas al dia, ~173 imagenes de 1024x1024) de un usuario que genere sin
  *     parar. Es un limitador de ventana deslizante, como `src/lib/rate-limit.ts`,
  *     pero con su propio cubo: las imagenes no deben gastar el limite de las
  *     llamadas al LLM ni al reves.

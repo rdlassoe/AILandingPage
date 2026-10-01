@@ -171,7 +171,7 @@ npm run verify:flow -- --provider=ollama
 ### 4. Imágenes generadas con IA (opcional)
 
 La técnica de diseño **«Generación de imágenes»** genera imágenes reales con FLUX.1 schnell en
-Cloudflare Workers AI (capa gratuita: 10 000 neuronas al día, de unas 170 a 230 imágenes) y las añade a
+Cloudflare Workers AI (capa gratuita: 10 000 neuronas al día, ~173 imágenes JPEG de 1024×1024) y las añade a
 la página. Funciona con cualquier proveedor de texto, también con el modo demo.
 
 ```env
@@ -201,7 +201,9 @@ igualmente y **«Reintentar imágenes»** completa solo las pendientes. Comprué
    antes de generar.
 4. **Generar HTML.** Reutiliza ese mismo prompt ya compuesto (no lo recompone). El
    orquestador elige proveedor y modelo, el validador normaliza la salida y la vista previa la
-   renderiza en un `iframe` aislado.
+   renderiza en un `iframe` aislado. Si elegiste la técnica «Generación de imágenes», el servidor
+   rellena los marcadores del HTML con imágenes reales (Cloudflare) antes de guardarlo; las que
+   fallen quedan como marcador y se reintentan con «Reintentar imágenes».
 5. **Editar (opcional).** En la pestaña "Codigo" del Prompt Studio, o en `/library/[id]/edit`,
    corriges el HTML a mano. Con "Inspeccionar" haces clic en un elemento de la vista previa y
    el editor salta a su etiqueta. `Ctrl+S` guarda una versión nueva ("Edicion manual"); hasta
@@ -233,7 +235,8 @@ src/
 │   ├── auth/                 Sesión (Supabase Auth o identidad local)
 │   ├── data/                 DataStore: interfaz + Supabase + local
 │   ├── llm/                  LLM Provider Layer (mock, gemini, groq, ollama, registro)
-│   ├── preview/              Instrumentación del HTML (parse5) y runtime del inspector
+│   ├── images/               Imágenes con IA: cliente de Cloudflare, marcadores del HTML, límites
+│   ├── preview/              Instrumentación del HTML (parse5), runtime del inspector e imágenes incrustadas
 │   ├── validation/           Esquemas Zod
 │   └── utils/  env.ts  errors.ts  rate-limit.ts  api-client.ts
 ├── services/                 Lógica de negocio pura
@@ -242,7 +245,8 @@ src/
 │   ├── output-validator/     Normalización y validación del HTML
 │   ├── landing-generator/    Flujo completo de generación y versionado
 │   ├── critic-engine/        Auditoría y prompt de refinamiento
-│   └── discover-engine/      Fases DISCOVER y DEFINE
+│   ├── discover-engine/      Fases DISCOVER y DEFINE
+│   └── image-generator/      Marcadores <img data-ai-image> → imágenes reales con FLUX
 ├── types/                    Contratos TypeScript
 └── middleware.ts             Refresco de sesión de Supabase
 ```
@@ -269,9 +273,15 @@ Arquitectura y decisiones en [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 | `PUT` | `/api/landings/[id]/html` | Guarda el HTML editado a mano como versión nueva y vigente. `422` si no es un documento, `409` si la versión base está desfasada, `403` si la página es de otra cuenta. |
 | `GET` | `/api/landings/[id]/versions` | Historial de versiones. |
 | `POST` | `/api/landings/[id]/reuse` | Clona el planteamiento a un proyecto nuevo. |
+| `POST` | `/api/landings/[id]/images` | Reintenta las imágenes que quedaron pendientes (solo pide las que faltan) y, si se genera alguna, guarda una versión «Imagenes». |
+| `GET` | `/api/landing-images/[id]` | Sirve una imagen generada **sin sesión** (el `uuid` es la capacidad de lectura). Local: el fichero; Supabase: `302` al bucket. `404` si el id no es un uuid. |
 | `GET/POST` | `/api/technologies` | Catálogo y alta de tecnologías propias. |
+| `PATCH/DELETE` | `/api/technologies/[id]` | Edita o borra una tecnología propia (el catálogo común es de solo lectura). |
+| `GET/PATCH` | `/api/profile` | Perfil del usuario y sus preferencias de proveedor y modelo. |
+| `POST` | `/api/auth/logout` | Cierra la sesión. Es `POST` para que un enlace no pueda dispararlo. |
 | `GET` | `/api/providers` | Estado de los proveedores (sin secretos). |
 | `POST` | `/api/providers/test` | Prueba de conexión real (512 tokens de salida). |
+| `POST` | `/api/providers/image/test` | Prueba de conexión real con Cloudflare: una imagen de un solo paso (unas decenas de neuronas). |
 | `GET` | `/api/search` | Búsqueda global. |
 
 Todas devuelven `{ data }` o `{ error: { code, message, hint } }`. El detalle técnico no
