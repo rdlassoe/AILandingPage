@@ -152,7 +152,7 @@ export default async function DashboardPage() {
               <PanelHeader eyebrow="Atajos" title="Empezar por aqui" />
               <ul className="divide-y divide-line">
                 {[
-                  { href: '/projects/new', icon: Plus, label: 'Crear proyecto', hint: 'Asistente en 5 pasos' },
+                  { href: '/projects/new', icon: Plus, label: 'Crear proyecto', hint: 'Asistente en 3 pasos' },
                   { href: '/prompt-studio', icon: SquareTerminal, label: 'Generador de prompts', hint: 'Componer y ejecutar' },
                   { href: '/library', icon: BookMarked, label: 'Banco de Landing Pages', hint: 'Reutilizar y versionar' },
                   { href: '/technologies', icon: Boxes, label: 'Tecnologias', hint: 'Reglas por stack' },

@@ -562,6 +562,9 @@ export async function generateVariation(
   const sourceVersion = await getSourcePromptVersion(ctx, landing);
   const systemInstruction = sourceVersion?.systemInstruction || DEFAULT_SYSTEM_INSTRUCTION;
   const seedStringValue = freshSeed?.randomString ?? landing.metadata.seedStringValue;
+  // Solo se pide respetar restricciones negativas si el encargo original las llevaba
+  // (tecnica "Restricciones negativas"): remitir a algo que no existe contradice al prompt.
+  const keepsNegative = (sourceVersion?.sections ?? []).some((section) => section.id === 'NEGATIVE_CONSTRAINTS');
 
   const variationPrompt = [
     'Vas a producir una VARIANTE de una Landing Page existente.',
@@ -587,7 +590,7 @@ export async function generateVariation(
     '',
     '## REGLAS',
     '- La variante debe ser reconociblemente distinta, no un ajuste cosmetico.',
-    '- Manten la calidad, la accesibilidad y las restricciones negativas del encargo original.',
+    `- Manten la calidad y la accesibilidad del encargo original${keepsNegative ? ' y sus restricciones negativas' : ''}.`,
     ...preserveImagesRule(landing.html),
     '- Devuelve el documento HTML completo y autocontenido.',
     '- Primera linea: <!DOCTYPE html>. Ultima linea: </html>. Sin markdown.',

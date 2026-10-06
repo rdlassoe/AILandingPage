@@ -146,7 +146,7 @@ project → prompt → prompt_version → generation → landing_page → landin
 
 Una Landing Page nunca queda separada de su prompt: guarda `prompt_id`,
 `prompt_version_id` y `generation_id`. La ficha de la biblioteca muestra el texto exacto
-que la produjo, con su Seed String, sus restricciones negativas y los conflictos de stack
+que la produjo, con su Seed String y sus restricciones negativas (si las llevaba: son una técnica) y los conflictos de stack
 que se resolvieron.
 
 Las imágenes generadas cuelgan del proyecto y de la generación que las pidió (`landing_images`), y el

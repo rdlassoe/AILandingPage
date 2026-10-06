@@ -54,7 +54,15 @@ const TECHNIQUE_FINGERPRINTS: Record<DesignTechniqueId, readonly string[]> = {
     'un unico cta primario por pantalla',
     'maximo 3 campos en cualquier formulario',
   ],
-  'negative-constraints-plus': ['tics que delatan contenido generado por ia', 'piel perfecta'],
+  // Ademas del texto de la tecnica, la lista base (`BASE_NEGATIVE_CONSTRAINTS`): sin elegirla
+  // no puede haber restricciones negativas, ni siquiera redactadas por el modelo.
+  'negative-constraints-plus': [
+    'tics que delatan contenido generado por ia',
+    'piel perfecta',
+    'sin degradados morados',
+    'sin glassmorphism',
+    'sin sombras difusas de gran radio',
+  ],
   'human-writing': ['frases concretas con sujeto, verbo y consecuencia', 'longitud variable de frase'],
 };
 

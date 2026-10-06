@@ -251,38 +251,11 @@ export const PRESET_TECHNOLOGIES: Omit<Technology, 'createdAt' | 'updatedAt'>[] 
   ),
 ];
 
-/** Restricciones negativas por defecto para cualquier proyecto nuevo. */
-export const DEFAULT_NEGATIVE_CONSTRAINTS: string[] = [
-  'Sin degradados morados ni azul-a-violeta.',
-  'Sin el layout generico de SaaS: hero centrado + tres tarjetas + tabla de precios + FAQ.',
-  'Sin glassmorphism ni fondos desenfocados.',
-  'Sin tarjetas con bordes muy redondeados por todas partes.',
-  'Sin sombras difusas de gran radio.',
-  'Sin animaciones de entrada en cada seccion.',
-  'Sin copy generico de IA: nada de "revoluciona", "desbloquea el poder", "lleva tu X al siguiente nivel".',
-  'Sin fotografia de stock corporativa de personas sonriendo en oficinas.',
-  'Sin emojis como sustituto de iconografia.',
-  'Sin texto de relleno tipo lorem ipsum.',
-];
-
-/** Sugerencias de secciones para el asistente de proyecto. */
-export const SECTION_SUGGESTIONS: string[] = [
-  'Hero',
-  'Propuesta de valor',
-  'Como funciona',
-  'Caracteristicas',
-  'Beneficios',
-  'Casos de uso',
-  'Prueba social',
-  'Datos y resultados',
-  'Comparativa',
-  'Precios',
-  'Equipo',
-  'FAQ',
-  'CTA final',
-  'Pie de pagina',
-];
-
+/**
+ * Categorias de la biblioteca (filtro). Las restricciones negativas por defecto
+ * ya no viven aqui: son de la tecnica `negative-constraints-plus`
+ * (`BASE_NEGATIVE_CONSTRAINTS`, en `prompt-engine/design-techniques.ts`).
+ */
 export const LANDING_CATEGORIES: string[] = [
   'SaaS',
   'Producto fisico',

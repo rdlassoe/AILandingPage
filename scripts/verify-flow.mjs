@@ -138,13 +138,16 @@ const run = async () => {
     none.status === 200 &&
       !noneBuilt?.content?.includes('## SUBTRACTIVE DESIGN') &&
       !noneBuilt?.content?.includes('## SEED STRING') &&
-      noneBuilt?.seedStringValue === null,
-    'Sin tecnicas elegidas: el prompt no trae SUBTRACTIVE DESIGN ni SEED STRING',
+      !noneBuilt?.content?.includes('## NEGATIVE CONSTRAINTS') &&
+      noneBuilt?.seedStringValue === null &&
+      noneBuilt?.negativeConstraints?.length === 0,
+    'Sin tecnicas elegidas: el prompt no trae SUBTRACTIVE DESIGN, SEED STRING ni NEGATIVE CONSTRAINTS',
     `status=${none.status} secciones=${noneBuilt?.sections?.length}`,
   );
+  // SUBTRACTIVE DESIGN, SEED STRING y NEGATIVE CONSTRAINTS: las restricciones negativas son una tecnica.
   log(
-    built?.sections?.length !== undefined && noneBuilt?.sections?.length === built.sections.length - 2,
-    'Sin tecnicas elegidas: el prompt tiene exactamente las 2 secciones menos',
+    built?.sections?.length !== undefined && noneBuilt?.sections?.length === built.sections.length - 3,
+    'Sin tecnicas elegidas: el prompt tiene exactamente las 3 secciones menos',
     `${built?.sections?.length} -> ${noneBuilt?.sections?.length}`,
   );
   await pause();
@@ -156,8 +159,9 @@ const run = async () => {
       oneBuilt?.content?.includes('## SUBTRACTIVE DESIGN') === true &&
       oneBuilt?.content?.includes('sesgos cognitivos') === true &&
       !oneBuilt?.content?.includes('maximo 6 secciones') &&
-      !oneBuilt?.content?.includes('## SEED STRING'),
-    'Solo "Prompts Ambiciosos": aparece su texto y ninguno de las demas tecnicas',
+      !oneBuilt?.content?.includes('## SEED STRING') &&
+      !oneBuilt?.content?.includes('## NEGATIVE CONSTRAINTS'),
+    'Solo "Prompts Ambiciosos": aparece su texto y ninguno de las demas tecnicas (tampoco restricciones negativas)',
     `status=${one.status}`,
   );
 

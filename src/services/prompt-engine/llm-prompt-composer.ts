@@ -19,10 +19,15 @@ import type { BuiltPrompt, DesignTechniqueId } from '@/types/services';
  * compone el codigo y su trabajo es reescribirlo, seccion por seccion, con
  * la misma estructura de titulos.
  *
- * Tres secciones viajan como bloques "de sistema" que el modelo debe copiar
- * tal cual: TECHNOLOGY (el stack lo elige el usuario, no el LLM), NEGATIVE
- * CONSTRAINTS (son requisitos acordados, no material creativo) y SUBTRACTIVE
- * DESIGN (el texto de las tecnicas de diseno que eligio el usuario).
+ * Hasta tres secciones viajan como bloques "de sistema" que el modelo debe
+ * copiar tal cual: TECHNOLOGY (el stack lo elige el usuario, no el LLM),
+ * SUBTRACTIVE DESIGN (el texto de las tecnicas de diseno que eligio) y
+ * NEGATIVE CONSTRAINTS, que solo existe si eligio esa tecnica. Sin ella el
+ * modelo tiene prohibido escribir restricciones negativas.
+ *
+ * El brief ya no fija estilo, secciones ni caracteristicas: cuando faltan, el
+ * borrador delega la decision en el modelo y este debe escribir contenido
+ * concreto, no parafrasear una frase vacia.
  *
  * Pedirselo no basta: `reconcileComposedSections` (`composed-prompt.ts`) lo
  * impone sobre la respuesta — restaura esas secciones del borrador, descarta
@@ -48,9 +53,17 @@ const has = (draft: BuiltPrompt, id: PromptSectionId): boolean => draft.sections
  * chocaba con una peticion de "escribe las 17 secciones" y un modelo podia
  * inventar el bloque de tecnicas.
  */
+/** "a", "a y b", "a, b y c". */
+function listEs(items: string[]): string {
+  if (items.length <= 1) return items.join('');
+  return `${items.slice(0, -1).join(', ')} y ${items[items.length - 1]}`;
+}
+
 function buildComposerSystem(draft: BuiltPrompt): string {
   const hasTechniques = has(draft, 'SUBTRACTIVE_DESIGN');
+  const hasNegative = has(draft, 'NEGATIVE_CONSTRAINTS');
   const verbatimTitles = VERBATIM_SECTIONS.filter((id) => has(draft, id)).map((id) => SECTION_TITLES[id]);
+  const decided = ['el stack', ...(hasTechniques ? ['las tecnicas de diseno'] : []), ...(hasNegative ? ['las restricciones negativas'] : [])];
 
   const rules: string[][] = [
     [
@@ -59,11 +72,20 @@ function buildComposerSystem(draft: BuiltPrompt): string {
       'no las renombres, no las fusiones ni las omitas.',
     ],
     [
-      `Las secciones ${verbatimTitles.join(', ')} ya estan decididas de antemano`,
-      `(el usuario ya eligio el stack${hasTechniques ? ', las tecnicas de diseno' : ''} y las`,
-      'restricciones): copialas TAL CUAL en su misma seccion, sin resumirlas,',
-      'parafrasearlas ni "mejorarlas".',
+      `Las secciones ${listEs(verbatimTitles)} ya estan decididas de antemano`,
+      `(el usuario ya eligio ${listEs(decided)}): copialas TAL CUAL en su`,
+      'misma seccion, sin resumirlas, parafrasearlas ni "mejorarlas".',
     ],
+    hasNegative
+      ? [
+          'La seccion NEGATIVE CONSTRAINTS es la UNICA que lleva prohibiciones. No',
+          'repitas ni amplies sus restricciones en otras secciones.',
+        ]
+      : [
+          'El usuario NO eligio restricciones negativas: no escribas una seccion',
+          'NEGATIVE CONSTRAINTS ni introduzcas prohibiciones propias ("sin X",',
+          '"nunca Y") sobre estilo, estructura o contenido en ninguna seccion.',
+        ],
     hasTechniques
       ? [
           `La seccion ${SECTION_TITLES.SUBTRACTIVE_DESIGN} contiene las UNICAS tecnicas de diseno que`,
@@ -97,8 +119,26 @@ function buildComposerSystem(draft: BuiltPrompt): string {
     [
       'El resto de secciones puedes y debes reescribirlas: haz el encargo mas',
       'concreto, mas accionable y mejor argumentado que el borrador, sin',
-      'cambiar los hechos (el producto, el publico, el objetivo de negocio,',
-      'el stack).',
+      'cambiar ni inventar hechos: ni el producto, el publico, el objetivo de',
+      'negocio o el stack, ni cifras, clientes, testimonios, precios o politicas',
+      '(envios, devoluciones, garantias) que el borrador no mencione.',
+    ],
+    [
+      'VISUAL DIRECTION, INFORMATION ARCHITECTURE y COPY REQUIREMENTS pueden',
+      'llegar sin datos fijados por el usuario: el borrador lo dice con frases',
+      'como "es decision tuya", "define tu la estructura" o "deduce las',
+      'caracteristicas". Entonces la decision es TUYA y debes escribir contenido',
+      'concreto: estilo y paleta con valores, tipografia, y la estructura como',
+      'lista numerada "N. Nombre — proposito", partiendo del nicho, del publico y,',
+      'si existen, del analisis DISCOVER y de las direcciones visuales que traiga.',
+      'No copies la frase que te delega la decision ni la dejes en abstracto. Si',
+      'solo falta una parte, respeta lo fijado y completa el resto.',
+    ],
+    [
+      'FUNCTIONAL REQUIREMENTS solo puede exigir interacciones (preguntas',
+      'frecuentes, formularios, carrito...) de secciones que existan en la',
+      'INFORMATION ARCHITECTURE que escribas: si no hay seccion que lo',
+      'justifique, quitalo o dejalo condicional.',
     ],
     [
       'Nunca generes tu mismo el HTML de la Landing Page, ni ningun documento:',

@@ -17,10 +17,34 @@ import type { DesignTechnique, DesignTechniqueId } from '@/types/services';
  * archivo. Generarlo queda para quien reciba ese prompt como entrada a
  * Runway/Luma.
  *
- * "Restricciones Negativas" del PDF no es un toggle aqui: el prompt ya trae
- * una seccion NEGATIVE_CONSTRAINTS siempre presente y editable por proyecto.
- * Esta tecnica anade severidad extra sobre esa base, no la sustituye.
+ * "Restricciones Negativas" del PDF es la tecnica `negative-constraints-plus`:
+ * el prompt solo lleva restricciones negativas si esta elegida. Entonces la
+ * seccion NEGATIVE_CONSTRAINTS lista `BASE_NEGATIVE_CONSTRAINTS` mas las que
+ * el proyecto declare por su cuenta. Sin la tecnica no hay seccion, ni lista,
+ * ni ninguna otra referencia a "restricciones negativas" en el prompt.
+ *
+ * Regla general: una tecnica se aplica SOLO al elegirla. El texto base del
+ * prompt (`index.ts`) no puede llevar versiones parciales de ellas.
  */
+
+/**
+ * Restricciones negativas que aplica la tecnica `negative-constraints-plus`.
+ * Son de esa tecnica, no del brief: el asistente ya no las ofrece ni las
+ * precarga en el proyecto.
+ */
+export const BASE_NEGATIVE_CONSTRAINTS: string[] = [
+  'Sin degradados morados ni azul-a-violeta.',
+  'Sin la plantilla generica de SaaS aplicada por inercia (hero centrado, tres tarjetas, tabla de precios, FAQ): la estructura sale del producto y del publico.',
+  'Sin glassmorphism ni fondos desenfocados.',
+  'Sin tarjetas con bordes muy redondeados por todas partes.',
+  'Sin sombras difusas de gran radio.',
+  'Sin animaciones de entrada en cada seccion.',
+  'Sin copy generico de IA: nada de "revoluciona", "desbloquea el poder", "lleva tu X al siguiente nivel".',
+  'Sin fotografia de stock corporativa de personas sonriendo en oficinas.',
+  'Sin emojis como sustituto de iconografia.',
+  'Sin texto de relleno tipo lorem ipsum.',
+];
+
 export const DESIGN_TECHNIQUES: DesignTechnique[] = [
   {
     id: 'seed-strings',
@@ -125,11 +149,11 @@ export const DESIGN_TECHNIQUES: DesignTechnique[] = [
   },
   {
     id: 'negative-constraints-plus',
-    label: 'Restricciones negativas reforzadas',
-    summary: 'Severidad extra sobre las restricciones ya acordadas: nada de "huella de IA".',
+    label: 'Restricciones negativas',
+    summary: 'Anade la seccion NEGATIVE CONSTRAINTS (anti "huella de IA" y anti-patrones visuales). Sin ella, el prompt no lleva restricciones negativas.',
     defaultEnabled: true,
     instruction: [
-      'Ademas de las restricciones negativas ya listadas para este proyecto, evita',
+      'Ademas de las restricciones de la seccion NEGATIVE CONSTRAINTS, evita',
       'especificamente los "tics" que delatan contenido generado por IA:',
       '- palabras como "delve", "comprehensive", "unlock", "revolucionario", "ecosistema";',
       '- imagenes con piel perfecta, mirando a camara o con iluminacion de estudio',
@@ -151,7 +175,7 @@ export const DESIGN_TECHNIQUES: DesignTechnique[] = [
       '',
       'Obligatorio:',
       '- frases concretas con sujeto, verbo y consecuencia;',
-      '- cifras, plazos y nombres reales en lugar de adjetivos;',
+      '- cifras, plazos y nombres concretos cuando el encargo los aporte, en lugar de adjetivos (nunca inventados);',
       '- micro-copy contextual junto a cada accion (que pasa al pulsar, que no pasa);',
       '- vocabulario del publico objetivo, no del departamento de marketing;',
       '- longitud variable de frase para que el texto tenga ritmo.',

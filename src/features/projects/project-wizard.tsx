@@ -6,16 +6,22 @@ import { ArrowLeft, ArrowRight, Check, Wand2 } from 'lucide-react';
 
 import { Alert, Button, Field, Input, Panel, PanelBody, PanelHeader, Select, Textarea } from '@/components/ui';
 import { TagInput } from '@/components/ui/tag-input';
-import { DEFAULT_NEGATIVE_CONSTRAINTS, LANDING_CATEGORIES, SECTION_SUGGESTIONS } from '@/lib/data/catalog';
 import { cn } from '@/lib/utils';
 import type { LandingType, Technology, Tone } from '@/types/domain';
 
 /**
  * Asistente de creacion de proyecto.
  *
- * Aplica revelacion progresiva: cinco pasos con pocas preguntas cada uno, en
- * lugar de un formulario unico de cuarenta campos. Solo el paso 1 y el paso 2
- * son obligatorios; el resto tiene valores por defecto razonables.
+ * Aplica revelacion progresiva: tres pasos con pocas preguntas cada uno. Solo
+ * el paso 1 y el paso 2 son obligatorios.
+ *
+ * No pregunta por estilo, colores, tipografia, secciones, caracteristicas,
+ * beneficios, restricciones negativas ni restricciones tecnicas: eran decisiones
+ * del prompt que chocaban con las tecnicas de diseno (p. ej. «Menos de 150 KB»
+ * o «Un unico archivo HTML» contra la generacion de imagenes o el CDN de
+ * Tailwind). La direccion visual y la estructura las decide quien redacta el
+ * prompt (con la Seed si esta elegida) y las restricciones negativas son la
+ * tecnica "Restricciones negativas" del Prompt Studio.
  */
 
 const LANDING_TYPES: Array<{ value: LandingType; label: string }> = [
@@ -45,9 +51,7 @@ const TONES: Array<{ value: Tone; label: string }> = [
 const STEPS = [
   { id: 1, title: '¿Que quieres crear?', hint: 'Lo basico del encargo' },
   { id: 2, title: '¿Para quien?', hint: 'Publico, objetivo y tono' },
-  { id: 3, title: '¿Que tecnologia?', hint: 'Stack y restricciones tecnicas' },
-  { id: 4, title: '¿Que estilo buscas?', hint: 'Direccion visual' },
-  { id: 5, title: '¿Que quieres evitar?', hint: 'Restricciones negativas y secciones' },
+  { id: 3, title: '¿Que tecnologia?', hint: 'Stack tecnologico' },
 ];
 
 interface FormState {
@@ -64,17 +68,6 @@ interface FormState {
   technologyIds: string[];
   framework: string;
   libraries: string[];
-  constraints: string[];
-  style: string;
-  colors: string[];
-  typography: string;
-  sophistication: number;
-  references: string[];
-  avoid: string[];
-  sections: string[];
-  features: string[];
-  benefits: string[];
-  negativeConstraints: string[];
 }
 
 const INITIAL: FormState = {
@@ -91,17 +84,6 @@ const INITIAL: FormState = {
   technologyIds: ['html5', 'css3', 'javascript'],
   framework: '',
   libraries: [],
-  constraints: [],
-  style: '',
-  colors: [],
-  typography: '',
-  sophistication: 3,
-  references: [],
-  avoid: [],
-  sections: [],
-  features: [],
-  benefits: [],
-  negativeConstraints: DEFAULT_NEGATIVE_CONSTRAINTS,
 };
 
 export function ProjectWizard({ technologies }: { technologies: Technology[] }) {
@@ -160,28 +142,15 @@ export function ProjectWizard({ technologies }: { technologies: Technology[] }) 
             productOrService: form.productOrService || form.name,
             primaryCta: form.primaryCta,
           },
-          visual: {
-            style: form.style,
-            colors: form.colors,
-            typography: form.typography,
-            sophistication: form.sophistication,
-            references: form.references,
-            avoid: form.avoid,
-          },
           technical: {
             technologyIds: form.technologyIds,
             framework: form.framework || null,
             libraries: form.libraries,
-            constraints: form.constraints,
           },
           content: {
-            sections: form.sections,
-            features: form.features,
-            benefits: form.benefits,
             keyMessage: form.keyMessage,
             tone: form.tone,
           },
-          negativeConstraints: form.negativeConstraints,
         }),
       });
 
@@ -249,8 +218,6 @@ export function ProjectWizard({ technologies }: { technologies: Technology[] }) 
             {step === 1 ? <StepOne form={form} set={set} /> : null}
             {step === 2 ? <StepTwo form={form} set={set} /> : null}
             {step === 3 ? <StepThree form={form} set={set} technologies={technologies} /> : null}
-            {step === 4 ? <StepFour form={form} set={set} /> : null}
-            {step === 5 ? <StepFive form={form} set={set} /> : null}
           </PanelBody>
         </Panel>
 
@@ -486,180 +453,6 @@ function StepThree({
           />
         </Field>
       </div>
-
-      <Field
-        label="Restricciones tecnicas"
-        htmlFor="constraints"
-        hint="Limites que el modelo debe respetar: sin CDN, sin cookies, peso maximo..."
-      >
-        <TagInput
-          id="constraints"
-          value={form.constraints}
-          onChange={(next) => set('constraints', next)}
-          placeholder="Sin dependencias externas"
-          suggestions={['Sin dependencias externas', 'Un unico archivo HTML', 'Sin cookies', 'Menos de 150 KB']}
-        />
-      </Field>
-    </>
-  );
-}
-
-function StepFour({ form, set }: { form: FormState; set: Setter }) {
-  return (
-    <>
-      <Field
-        label="Estilo visual"
-        htmlFor="style"
-        hint="Describelo con tus palabras. La direccion creativa (Seed String) se genera sola en cada ejecucion."
-      >
-        <Input
-          id="style"
-          value={form.style}
-          onChange={(event) => set('style', event.target.value)}
-          placeholder="Sobrio, tecnico, con datos por delante del adorno"
-        />
-      </Field>
-
-      <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="Colores" htmlFor="colors" hint="Codigos hex o nombres. Se usan como paleta base.">
-          <TagInput
-            id="colors"
-            value={form.colors}
-            onChange={(next) => set('colors', next)}
-            placeholder="#1b1b1b"
-            max={8}
-          />
-        </Field>
-
-        <Field label="Tipografia" htmlFor="typography">
-          <Input
-            id="typography"
-            value={form.typography}
-            onChange={(event) => set('typography', event.target.value)}
-            placeholder="Grotesca neutra + monoespaciada para datos"
-          />
-        </Field>
-      </div>
-
-      <Field
-        label={`Nivel de sofisticacion: ${form.sophistication}`}
-        htmlFor="sophistication"
-        hint="1 = funcional y austero. 5 = altamente refinado."
-      >
-        <input
-          id="sophistication"
-          type="range"
-          min={1}
-          max={5}
-          step={1}
-          value={form.sophistication}
-          onChange={(event) => set('sophistication', Number(event.target.value))}
-          className="w-full accent-[var(--accent)]"
-        />
-      </Field>
-
-      <Field label="Referencias visuales" htmlFor="references">
-        <TagInput
-          id="references"
-          value={form.references}
-          onChange={(next) => set('references', next)}
-          placeholder="Una referencia por entrada"
-          max={10}
-        />
-      </Field>
-    </>
-  );
-}
-
-function StepFive({ form, set }: { form: FormState; set: Setter }) {
-  const toggleConstraint = (constraint: string) => {
-    set(
-      'negativeConstraints',
-      form.negativeConstraints.includes(constraint)
-        ? form.negativeConstraints.filter((item) => item !== constraint)
-        : [...form.negativeConstraints, constraint],
-    );
-  };
-
-  const extra = form.negativeConstraints.filter((item) => !DEFAULT_NEGATIVE_CONSTRAINTS.includes(item));
-
-  return (
-    <>
-      <fieldset className="grid gap-2">
-        <legend className="mb-1 text-[0.8125rem] font-medium text-ink">Restricciones negativas</legend>
-        <p className="mb-1 text-xs text-faint">
-          Son requisitos duros en el prompt. Sirven para evitar los patrones tipicos de una pagina generada por IA.
-        </p>
-        <div className="grid gap-1">
-          {DEFAULT_NEGATIVE_CONSTRAINTS.map((constraint) => (
-            <label key={constraint} className="flex cursor-pointer items-start gap-2.5 text-sm">
-              <input
-                type="checkbox"
-                checked={form.negativeConstraints.includes(constraint)}
-                onChange={() => toggleConstraint(constraint)}
-                className="mt-1 size-3.5 flex-none accent-[var(--accent)]"
-              />
-              <span className="text-muted">{constraint}</span>
-            </label>
-          ))}
-        </div>
-      </fieldset>
-
-      <Field label="Anadir restricciones propias" htmlFor="extraConstraints">
-        <TagInput
-          id="extraConstraints"
-          value={extra}
-          onChange={(next) =>
-            set('negativeConstraints', [
-              ...form.negativeConstraints.filter((item) => DEFAULT_NEGATIVE_CONSTRAINTS.includes(item)),
-              ...next,
-            ])
-          }
-          placeholder="Sin iconos de tres lineas en el menu de escritorio"
-          max={20}
-        />
-      </Field>
-
-      <Field label="Secciones requeridas" htmlFor="sections" hint="Si lo dejas vacio se usa una estructura base.">
-        <TagInput
-          id="sections"
-          value={form.sections}
-          onChange={(next) => set('sections', next)}
-          suggestions={SECTION_SUGGESTIONS}
-          placeholder="Hero"
-          max={16}
-        />
-      </Field>
-
-      <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="Caracteristicas" htmlFor="features">
-          <TagInput
-            id="features"
-            value={form.features}
-            onChange={(next) => set('features', next)}
-            placeholder="Lectura automatica de albaranes"
-          />
-        </Field>
-
-        <Field label="Beneficios" htmlFor="benefits">
-          <TagInput
-            id="benefits"
-            value={form.benefits}
-            onChange={(next) => set('benefits', next)}
-            placeholder="Menos tiempo buscando piezas"
-          />
-        </Field>
-      </div>
-
-      <Field label="Elementos visuales a evitar" htmlFor="avoid">
-        <TagInput
-          id="avoid"
-          value={form.avoid}
-          onChange={(next) => set('avoid', next)}
-          placeholder="Fotografia de stock"
-          suggestions={LANDING_CATEGORIES.length > 0 ? ['Fotografia de stock', 'Ilustracion isometrica', 'Emojis'] : []}
-        />
-      </Field>
     </>
   );
 }

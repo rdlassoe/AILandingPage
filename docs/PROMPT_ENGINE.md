@@ -3,13 +3,15 @@
 ## Qué produce
 
 Un prompt estructurado en **hasta 17 secciones canónicas**, a partir del proyecto, el stack, la
-Seed String, las técnicas de diseño activas y las restricciones negativas.
+Seed String y las técnicas de diseño activas.
 
-**Las técnicas de diseño son lo único opcional, y el prompt lleva únicamente las que el usuario
-eligió** — también cuando lo reescribe un LLM (ver
-[Con el LLM](#con-el-llm-qué-se-garantiza-y-qué-no)). La Seed String es una de ellas («Cadenas
-Semilla»): sin elegirla no hay sección `SEED STRING`, no se genera ningún string y no se gasta la
-llamada al modelo que lo generaría. Por eso el prompt tiene entre 15 y 17 secciones.
+**Las técnicas de diseño son lo único opcional, y todo lo que sea técnica se aplica solo al
+elegirla** — también cuando lo reescribe un LLM (ver
+[Con el LLM](#con-el-llm-qué-se-garantiza-y-qué-no)). La Seed String («Cadenas Semilla») y las
+restricciones negativas («Restricciones negativas») son técnicas como las demás: sin elegirlas no
+hay sección `SEED STRING` ni `NEGATIVE CONSTRAINTS`, no se genera ningún string y no se gasta la
+llamada al modelo que lo generaría. El resto del texto es neutro
+([Texto base neutro](#texto-base-neutro)). Por eso el prompt tiene entre 14 y 17 secciones.
 
 `buildLandingPrompt` sigue siendo una función pura y determinista — mismo proyecto, mismo
 texto — pero con un proveedor real ya no es el paso final: es el **borrador**. Dos llamadas
@@ -28,7 +30,7 @@ PROJECT CONTEXT ──► DISCOVER ──► TECHNOLOGY CONTEXT (composer.ts, el
     ↓
 SSoT SEED ENGINE (LLM real, o PRNG en modo demo) ──► SEED STRING     (solo con «Cadenas Semilla»)
     ↓
-DESIGN TECHNIQUES (solo las elegidas) ──► NEGATIVE CONSTRAINTS ──► BORRADOR determinista (buildLandingPrompt)
+DESIGN TECHNIQUES (solo las elegidas; «Restricciones negativas» incluida) ──► BORRADOR determinista (buildLandingPrompt)
                                                         ↓
                                     Proveedor real: LLM PROMPT COMPOSER reescribe el borrador
                                                         ↓
@@ -82,31 +84,67 @@ composición) es la que más a menudo fallaba en
 | 3 | `OBJECTIVE` | Qué debe conseguir la página en quince segundos. |
 | 4 | `TARGET AUDIENCE` | Público concreto y su *insight*. |
 | 5 | `BUSINESS GOAL` | Objetivo de negocio y CTA principal. |
-| 6 | `VISUAL DIRECTION` | Estilo, paleta, tipografía, sofisticación, referencias y vetos. |
+| 6 | `VISUAL DIRECTION` | Solo lo que el proyecto fije (proyectos creados con el antiguo paso de estilo) y las direcciones planteadas por DISCOVER. Si no hay nada fijado, delega la decisión en quien redacta el prompt. |
 | 7 | `SEED STRING` | La cadena y su traducción a decisiones de diseño. **Solo con «Cadenas Semilla» elegida.** |
-| 8 | `INFORMATION ARCHITECTURE` | Secciones exactas y en qué orden. |
-| 9 | `COPY REQUIREMENTS` | Tono, mensaje principal, características y beneficios. |
+| 8 | `INFORMATION ARCHITECTURE` | Las secciones que fije el proyecto o DEFINE, en orden. Si nadie las fijó, las decide el modelo: ya no hay una lista genérica por defecto. |
+| 9 | `COPY REQUIREMENTS` | Tono y, solo si el brief los trae, mensaje principal, características y beneficios; lo que falta se delega en una línea «Contenido». |
 | 10 | `TECHNOLOGY` | Bloque compuesto por el Prompt Composer. |
-| 11 | `FUNCTIONAL REQUIREMENTS` | Qué tiene que funcionar de verdad. |
+| 11 | `FUNCTIONAL REQUIREMENTS` | Qué tiene que funcionar de verdad. FAQ y formulario son condicionales («si la página incluye…»): la arquitectura puede no llevarlos. |
 | 12 | `RESPONSIVE REQUIREMENTS` | Mobile-first, breakpoints, áreas táctiles. |
 | 13 | `ACCESSIBILITY` | WCAG 2.1 AA, contraste, teclado, foco, etiquetas, ARIA. |
 | 14 | `SUBTRACTIVE DESIGN` | Contenedor del texto de las técnicas elegidas (la auditoría del «Diseño sustractivo», si lo está). **Solo si hay alguna técnica elegida.** |
-| 15 | `NEGATIVE CONSTRAINTS` | Requisitos duros, no sugerencias. |
-| 16 | `QUALITY CRITERIA` | Lista de verificación antes de responder. |
+| 15 | `NEGATIVE CONSTRAINTS` | Requisitos duros, no sugerencias. **Solo con «Restricciones negativas» elegida.** |
+| 16 | `QUALITY CRITERIA` | Criterios declarativos de la entrega. Sin «verifica y corrige antes de responder» (eso es «Bucles con subagentes»). |
 | 17 | `OUTPUT FORMAT` | Documento autocontenido, sin markdown, `<!DOCTYPE html>` … `</html>`. |
 
 Las secciones vacías se omiten. El Prompt Studio permite verlas una a una antes de ejecutar.
 
-**El prompt no siempre tiene 17 secciones.** Dos dependen de las técnicas elegidas:
+**El prompt no siempre tiene 17 secciones.** Tres dependen de las técnicas elegidas:
 
 - `SEED STRING` existe si y solo si está elegida «Cadenas Semilla».
+- `NEGATIVE CONSTRAINTS` existe si y solo si está elegida «Restricciones negativas».
 - `SUBTRACTIVE DESIGN` es el contenedor de *todas* las técnicas elegidas (ver
   [Dónde aparecen las técnicas](#dónde-aparecen-las-técnicas)): existe si hay al menos una.
 
-Sin ninguna técnica el prompt tiene **15** secciones; con solo «Cadenas Semilla», 17 (las dos
-existen: la Seed y su texto de refuerzo); con solo otra técnica, 16. Ningún texto fijo del
-borrador menciona una técnica que no se eligió: sin la Seed, `VISUAL DIRECTION` y
-`QUALITY CRITERIA` tampoco se refieren a ella.
+Sin ninguna técnica el prompt tiene **14** secciones; con todas, 17. Ningún texto fijo del borrador
+menciona una técnica que no se eligió: sin la Seed, `VISUAL DIRECTION` y `QUALITY CRITERIA`
+tampoco se refieren a ella; sin las restricciones, ni la sección, ni el criterio de calidad #6, ni
+la regla 7 de la instrucción de sistema existen.
+
+### Texto base neutro
+
+Antes, el texto fijo del borrador llevaba versiones parciales de varias técnicas aunque no
+estuvieran elegidas: «ningún elemento sin propósito» y «todo lo que no acerque al CTA compite con
+él» (Diseño sustractivo), «verifica una por una y corrígelo antes de entregar» (Bucles con
+subagentes), «sin clichés, con micro-copy» y «usa su vocabulario» (Redacción humana), la sección de
+restricciones (siempre presente) y «clientes que rechazan resultados genéricos» en la instrucción
+de sistema. Eso hacía que activar o desactivar una técnica cambiara menos de lo esperado y
+contradecía la regla 3 del compositor («no apliques auditorías ni bucles de revisión»).
+
+Ahora el texto base solo dice lo factual (accesibilidad, semántica, responsive, formato de salida)
+y cualquier criterio de estilo, redacción o revisión vive en su técnica. `npm run verify:prompt`
+lo comprueba en las 256 combinaciones (`TECHNIQUE_LEAK_MARKERS`).
+
+### Un brief sin estilo, secciones ni restricciones
+
+El asistente de proyectos tiene 3 pasos y ya no pregunta por estilo, colores, tipografía,
+sofisticación, referencias, secciones, características, beneficios, restricciones negativas ni
+restricciones técnicas: eran decisiones del prompt que chocaban con las técnicas (la Seed debía decidir la paleta, el
+tope de 6 secciones de «Diseño sustractivo» chocaba con las secciones por defecto, etc.). Los
+campos siguen existiendo en el modelo para no romper proyectos antiguos, y si traen datos se
+respetan. Cuando faltan, el borrador **no inventa valores** (ni viñetas en blanco, ni la
+sofisticación por defecto presentada como elección) y lo dice con una frase que delega la
+decisión, que el compositor LLM debe convertir en contenido concreto:
+
+| Sección | Qué dice si el brief no fija nada |
+| --- | --- |
+| `VISUAL DIRECTION` | «El encargo no fija estilo, paleta ni tipografía: la dirección visual es decisión tuya», derivada de la Seed si está elegida o del nicho y el público si no. Incluye las direcciones de DISCOVER (`visualDirections`), que antes se generaban y no llegaban al prompt. |
+| `INFORMATION ARCHITECTURE` | «Define tú la estructura más adecuada para este tipo de landing». Sin lista numerada a propósito: el Mock Provider lee como sección cada línea numerada. |
+| `COPY REQUIREMENTS` | Una línea «Contenido: deduce el mensaje principal, las características y los beneficios de la descripción». Antes el mensaje principal caía a la descripción entera. |
+
+El modelo no debe inventar hechos al rellenar esas secciones (cifras, clientes, testimonios,
+precios, políticas): lo dice la regla 5 del compositor. Es una instrucción, no una garantía de
+código.
 
 ---
 
@@ -190,7 +228,7 @@ Las 8 de *"Tratado Práctico: 8 Técnicas Avanzadas de Diseño de Landing Pages 
 | Generación de imágenes | No | Pide marcadores `<img data-ai-image="…">` (máx. 4, prompt en inglés, sin `src`) y **el servidor genera las imágenes de verdad** con FLUX (Cloudflare) y las añade a la página. Ver [abajo](#generación-de-imágenes-real). |
 | Generación de vídeo | No | Igual, para un posible vídeo de fondo — la app no integra ningún generador de vídeo. |
 | Diseño sustractivo | Sí | Auditoría de cada elemento y techos duros: máx. 6 secciones, 4 tarjetas, 1 CTA primario, 3 campos por formulario. |
-| Restricciones negativas reforzadas | Sí | Severidad extra sobre la sección `NEGATIVE_CONSTRAINTS` ya existente: nada de "huella de IA". |
+| Restricciones negativas | Sí | Añade la sección `NEGATIVE CONSTRAINTS` ([lista base](#restricciones-negativas)) y el texto anti «huella de IA». Sin ella no hay restricciones negativas en el prompt. |
 | Redacción humana | Sí | Frases concretas, cifras, micro-copy; prohíbe los clichés de IA por nombre. |
 
 **«Generación de vídeo» sigue siendo una prompt-instrucción, no generación real**: la app no
@@ -226,22 +264,25 @@ Las técnicas no tienen sección propia: `buildLandingPrompt` las escribe todas 
 `SUBTRACTIVE DESIGN` (`getTechniques` filtra el catálogo por las elegidas). Primero va el
 "Diseño sustractivo", si está elegido; las demás, bajo `### Otras tecnicas activas`. De ahí:
 
-- **Ninguna elegida:** la sección queda vacía y se omite. Sin la Seed tampoco, el prompt tiene
-  15 secciones.
+- **Ninguna elegida:** la sección queda vacía y se omite. Sin la Seed ni las restricciones
+  tampoco, el prompt tiene 14 secciones.
 - **Elegidas, pero no el "Diseño sustractivo":** la sección aparece igualmente con el título
   `SUBTRACTIVE DESIGN`, aunque solo contenga otras técnicas. Es un título engañoso, no un fallo
   de contenido.
 - **Una técnica tiene además sección propia:** «Cadenas Semilla» es la Seed. Elegirla añade el
   texto de refuerzo a `SUBTRACTIVE DESIGN` **y** la sección `SEED STRING` (más la llamada que
   genera el string); desmarcarla quita las dos cosas.
-- **`NEGATIVE CONSTRAINTS` existe siempre:** son las restricciones del proyecto, no una técnica.
-  Desmarcar "Restricciones negativas reforzadas" solo quita el texto de refuerzo de
-  `SUBTRACTIVE DESIGN`.
+- **«Restricciones negativas» también tiene sección propia:** elegirla añade su texto a
+  `SUBTRACTIVE DESIGN` **y** la sección `NEGATIVE CONSTRAINTS` con la lista base; desmarcarla quita
+  las dos cosas. Antes la sección existía siempre y se alimentaba de un paso del asistente.
 
 **Comprobado** (`npm run verify:prompt`): para las **256 combinaciones** posibles de las 8
 técnicas, el texto de cada técnica aparece en el borrador determinista **si y solo si** se eligió,
-y lo mismo la sección `SEED STRING`. Sin la Seed, el borrador no contiene la palabra «Seed» en
-ningún sitio.
+y lo mismo las secciones `SEED STRING` y `NEGATIVE CONSTRAINTS`. Sin la Seed, el borrador no
+contiene la palabra «Seed» en ningún sitio; sin las restricciones, ni la lista, ni la palabra
+«restricciones negativas», ni la regla de la instrucción de sistema. Todo ello con un brief vacío y
+con un brief con datos (512 borradores), más la ausencia de rastro de técnicas en el texto base y de
+viñetas vacías.
 
 ### Con el LLM: qué se garantiza y qué no
 
@@ -262,8 +303,10 @@ Qué **no** cubre:
   (`TECHNIQUE_FINGERPRINTS`): una paráfrasis no se detecta. Una frase que ya estuviera en el
   borrador —porque la escribió el usuario en su brief— no cuenta como colada.
 - **No se comprueba el contenido del resto de secciones.** Un modelo puede aplicar una idea
-  parecida a una técnica sin copiar su texto, p. ej. en `QUALITY CRITERIA`; y el borrador base ya
-  trae criterios generales («ningún elemento sin propósito») que no son una técnica.
+  parecida a una técnica sin copiar su texto, p. ej. en `QUALITY CRITERIA`. Lo que sí se garantiza
+  es que el borrador que recibe ya no la trae: el texto base es neutro. Para las restricciones
+  negativas, además del texto de la técnica se vigilan tres frases de su lista base
+  (`sin degradados morados`, `sin glassmorphism`, `sin sombras difusas de gran radio`).
 - **Las fases posteriores no vuelven a aplicar técnicas.** El refinamiento y las variantes solo
   repiten siete secciones del encargo y ninguna técnica. Las imágenes generadas sí se conservan:
   esos dos pasos añaden la regla de no tocar los `<img data-ai-image>` ni su `src`, pero no generan
@@ -282,14 +325,14 @@ de `POST /api/prompts/compose` con técnicas elegidas.
 
 ## Restricciones negativas
 
-Se inyectan como **requisitos duros**: «Estas restricciones son requisitos duros.
-Incumplir una invalida la entrega.»
-
-Por defecto un proyecto nuevo arrastra diez, editables en el paso 5 del asistente:
+**Solo existen si está elegida la técnica «Restricciones negativas»** (`negative-constraints-plus`,
+activa por defecto). Ya no son un paso del asistente ni una lista que se precargue en el proyecto:
+`BASE_NEGATIVE_CONSTRAINTS` (`design-techniques.ts`) es de la técnica. Se inyectan como **requisitos
+duros**: «Estas restricciones son requisitos duros. Incumplir una invalida la entrega.»
 
 ```
 Sin degradados morados ni azul-a-violeta.
-Sin el layout genérico de SaaS: hero centrado + tres tarjetas + tabla de precios + FAQ.
+Sin la plantilla genérica de SaaS aplicada por inercia (hero centrado, tres tarjetas, tabla de precios, FAQ): la estructura sale del producto y del público.
 Sin glassmorphism ni fondos desenfocados.
 Sin tarjetas con bordes muy redondeados por todas partes.
 Sin sombras difusas de gran radio.
@@ -300,8 +343,16 @@ Sin emojis como sustituto de iconografía.
 Sin texto de relleno tipo lorem ipsum.
 ```
 
-El Critic Engine comprueba después si se han respetado, y las señala como incumplimiento
-cuando no es así.
+La segunda línea cambió respecto a la lista antigua («Sin el layout genérico de SaaS: hero + tres
+tarjetas + precios + FAQ»): prohibía justo la lista de 7 secciones que el propio prompt traía por
+defecto, y chocaba con cualquier landing que necesitara una FAQ.
+
+Con la técnica elegida, la sección lleva esa lista **más** las restricciones propias que declare el
+proyecto (campo `negativeConstraints`, que solo rellenan clientes de la API o proyectos antiguos),
+sin duplicados. Sin la técnica, esas restricciones propias **no se aplican**. El Prompt Version
+guarda la lista que se aplicó de verdad, y el Critic Engine comprueba contra esa lista, no contra la
+del proyecto. Lo mismo hacen refinar y variar: solo piden respetar restricciones negativas si el
+encargo original las llevaba.
 
 ---
 
@@ -377,7 +428,7 @@ hilo, y las restricciones que el modelo podría violar al reescribir:
 | `VISUAL_DIRECTION` | Evita que el refinamiento derive a otra estética. |
 | `SEED_STRING` | La dirección creativa se pierde en cuanto se deja de nombrar. |
 | `COPY_REQUIREMENTS` | Mantiene mensaje, características y beneficios. |
-| `NEGATIVE_CONSTRAINTS` | Lo que nunca debe reaparecer al reescribir. |
+| `NEGATIVE_CONSTRAINTS` | Lo que nunca debe reaparecer al reescribir (solo si el encargo la llevaba: es una técnica). |
 
 Medido: **de ~10 300 a ~6 000 tokens** de entrada. La diferencia entre caber o no en el
 límite por petición de una capa gratuita —Groq rechaza con `413` por encima de 8 000— y,

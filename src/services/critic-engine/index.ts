@@ -109,17 +109,25 @@ export async function critiqueLanding(
         `Publico: ${project.basics.targetAudience}`,
         `Objetivo: ${project.basics.primaryGoal}`,
         `CTA principal: ${project.basics.primaryCta}`,
-        `Estilo pedido: ${project.visual.style}`,
+        // El asistente ya no pregunta por el estilo: solo se pide contrastar si el proyecto lo fijo.
+        project.visual.style.trim() ? `Estilo pedido: ${project.visual.style.trim()}` : '',
         `Tono: ${project.content.tone}`,
       ]
         .filter(Boolean)
         .join('\n')
     : 'No hay proyecto asociado: audita la pagina por sus propios meritos.';
 
+  // Las restricciones que debian cumplirse son las que aplico el prompt que produjo la
+  // pagina (la tecnica "Restricciones negativas" mas las del proyecto), no solo las del
+  // proyecto: ya no hay una lista por defecto en el brief.
+  const promptVersion = landing.promptVersionId
+    ? await ctx.store.getPromptVersion(ctx.ownerId, landing.promptVersionId)
+    : null;
+  const appliedConstraints = promptVersion ? promptVersion.negativeConstraints : (project?.negativeConstraints ?? []);
   const constraints =
-    project && project.negativeConstraints.length > 0
-      ? project.negativeConstraints.map((item) => `- ${item}`).join('\n')
-      : '- (el proyecto no declaro restricciones negativas)';
+    appliedConstraints.length > 0
+      ? appliedConstraints.map((item) => `- ${item}`).join('\n')
+      : '- (el prompt no aplico restricciones negativas)';
 
   const userPrompt = [
     'REQUISITOS DEL PROYECTO',

@@ -1,10 +1,17 @@
 import { composeTechnologies } from './composer';
-import { getTechniques } from './design-techniques';
-import { DEFAULT_SYSTEM_INSTRUCTION, SECTION_ORDER, SECTION_TITLES } from './sections';
+import { BASE_NEGATIVE_CONSTRAINTS, getTechniques } from './design-techniques';
+import { SECTION_ORDER, SECTION_TITLES, buildSystemInstruction } from './sections';
 import { renderSeedBlock } from './seed-engine';
 import { estimateTokens } from '@/lib/utils';
-import type { DefineSpec, Project, PromptSection, PromptSectionId, SectionSpec } from '@/types/domain';
-import type { BuiltPrompt, PromptBuildInput } from '@/types/services';
+import type {
+  DefineSpec,
+  DiscoverInsights,
+  Project,
+  PromptSection,
+  PromptSectionId,
+  SectionSpec,
+} from '@/types/domain';
+import type { BuiltPrompt, DesignTechniqueId, PromptBuildInput } from '@/types/services';
 
 export * from './design-techniques';
 export * from './seed-engine';
@@ -25,36 +32,39 @@ export * from './sections';
  *
  * Las tecnicas de diseno son lo UNICO opcional del prompt, y solo aparecen
  * las que el usuario eligio: SEED STRING existe si y solo si esta elegida
- * "Cadenas Semilla" (`seed-strings`), y SUBTRACTIVE DESIGN —el contenedor del
- * texto del resto de tecnicas— solo si hay alguna elegida. Por eso el prompt
- * puede tener menos de 17 secciones. Ningun otro texto fijo del borrador
- * puede mencionar una tecnica que no se eligio.
+ * "Cadenas Semilla" (`seed-strings`), NEGATIVE CONSTRAINTS si y solo si esta
+ * elegida "Restricciones negativas" (`negative-constraints-plus`), y SUBTRACTIVE
+ * DESIGN —el contenedor del texto del resto de tecnicas— solo si hay alguna
+ * elegida. Por eso el prompt puede tener menos de 17 secciones.
+ *
+ * El texto base (todo lo que no sale de una tecnica) es neutro: no lleva
+ * versiones parciales de ninguna. Una auditoria de elementos, un bucle de
+ * autorrevision, reglas de redaccion o restricciones negativas solo existen
+ * porque la tecnica correspondiente esta elegida.
+ *
+ * El brief ya no fija estilo, secciones, caracteristicas ni restricciones
+ * (el asistente tiene 3 pasos). Cuando faltan, el borrador lo dice con una
+ * frase que delega la decision —"es decision tuya", "define tu la
+ * estructura"— y el compositor LLM escribe ahi contenido concreto.
  */
-
-const DEFAULT_SECTIONS: SectionSpec[] = [
-  { id: 'hero', name: 'Hero', purpose: 'Decir que es, para quien y que hacer a continuacion', order: 1, contentNotes: '', required: true },
-  { id: 'value', name: 'Propuesta de valor', purpose: 'Explicar el problema y como se resuelve', order: 2, contentNotes: '', required: true },
-  { id: 'features', name: 'Caracteristicas', purpose: 'Mostrar lo que hace, sin adornos', order: 3, contentNotes: '', required: true },
-  { id: 'how', name: 'Como funciona', purpose: 'Reducir la incertidumbre del primer uso', order: 4, contentNotes: '', required: false },
-  { id: 'benefits', name: 'Beneficios', purpose: 'Traducir caracteristicas a consecuencias', order: 5, contentNotes: '', required: false },
-  { id: 'faq', name: 'Preguntas frecuentes', purpose: 'Resolver las objeciones que frenan la conversion', order: 6, contentNotes: '', required: false },
-  { id: 'cta', name: 'CTA final', purpose: 'Cerrar con una unica accion clara', order: 7, contentNotes: '', required: true },
-];
 
 export function buildLandingPrompt(input: PromptBuildInput): BuiltPrompt {
   const { project } = input;
   const technology = composeTechnologies(input.technologies);
   const techniques = getTechniques(input.designTechniques);
+  const chosen = (id: DesignTechniqueId) => techniques.some((technique) => technique.id === id);
   // La Seed es la tecnica "Cadenas Semilla": sin elegirla no hay seccion, ni
-  // referencias a ella en el resto del borrador (colores y criterios de calidad).
-  const randomSeedString = techniques.some((technique) => technique.id === 'seed-strings')
-    ? input.randomSeedString?.trim() || null
-    : null;
+  // referencias a ella en el resto del borrador (direccion visual y criterios).
+  const randomSeedString = chosen('seed-strings') ? input.randomSeedString?.trim() || null : null;
   // Con "Generacion de imagenes" elegida, OUTPUT_FORMAT deja de decir que las
   // imagenes son SVG inline: el sistema rellena los marcadores `data-ai-image`.
-  const imagesRequested = techniques.some((technique) => technique.id === 'image-generation');
+  const imagesRequested = chosen('image-generation');
+  // Las restricciones negativas son la tecnica "Restricciones negativas": sin
+  // elegirla no hay lista, ni seccion, ni regla en el sistema que las mencione.
+  // Con ella, la lista base de la tecnica mas las que el proyecto declare.
+  const negativeApplied = chosen('negative-constraints-plus');
+  const negativeConstraints = negativeApplied ? mergeConstraints(BASE_NEGATIVE_CONSTRAINTS, input.negativeConstraints) : [];
   const architecture = resolveArchitecture(project, input.define ?? project.define);
-  const negativeConstraints = input.negativeConstraints.filter((item) => item.trim().length > 0);
   const discover = input.discover ?? project.discover;
 
   const sections: PromptSection[] = [];
@@ -114,9 +124,6 @@ export function buildLandingPrompt(input: PromptBuildInput): BuiltPrompt {
     [
       `- Publico: ${project.basics.targetAudience}`,
       ...(discover?.audienceInsight ? ['', `Insight: ${discover.audienceInsight}`] : []),
-      '',
-      'Escribe para ese publico concreto: usa su vocabulario y habla de sus problemas reales,',
-      'no de los beneficios que le gustaria contar a la empresa.',
     ].join('\n'),
   );
 
@@ -125,64 +132,45 @@ export function buildLandingPrompt(input: PromptBuildInput): BuiltPrompt {
     [
       `- Objetivo de negocio: ${project.basics.primaryGoal}`,
       `- CTA principal: ${project.basics.primaryCta}`,
-      '',
-      'Todo lo que no acerque al visitante a ese CTA compite con el.',
     ].join('\n'),
   );
 
-  add(
-    'VISUAL_DIRECTION',
-    [
-      `- Estilo: ${project.visual.style}`,
-      `- Colores: ${project.visual.colors.length > 0 ? project.visual.colors.join(', ') : `a decidir de forma coherente con ${randomSeedString ? 'la Seed String' : 'el estilo y el publico'}`}`,
-      `- Tipografia: ${project.visual.typography}`,
-      `- Nivel de sofisticacion (1-5): ${project.visual.sophistication}`,
-      ...(project.visual.references.length > 0
-        ? ['- Referencias:', ...project.visual.references.map((item) => `  - ${item}`)]
-        : []),
-      ...(project.visual.avoid.length > 0
-        ? ['- Evitar explicitamente:', ...project.visual.avoid.map((item) => `  - ${item}`)]
-        : []),
-    ].join('\n'),
-  );
+  add('VISUAL_DIRECTION', renderVisualDirection(project, discover, randomSeedString));
 
   if (randomSeedString) add('SEED_STRING', renderSeedBlock(randomSeedString));
 
   add(
     'INFORMATION_ARCHITECTURE',
-    [
-      'Construye la pagina exactamente con estas secciones, en este orden:',
-      '',
-      ...architecture.map(
-        (section, index) =>
-          `${index + 1}. ${section.name} — ${section.purpose}${section.contentNotes ? `. ${section.contentNotes}` : ''}`,
-      ),
-      '',
-      'No anadas secciones que no esten en esta lista.',
-    ].join('\n'),
+    architecture
+      ? [
+          'Construye la pagina exactamente con estas secciones, en este orden:',
+          '',
+          ...architecture.map(
+            (section, index) =>
+              `${index + 1}. ${section.name} — ${section.purpose}${section.contentNotes ? `. ${section.contentNotes}` : ''}`,
+          ),
+          '',
+          'No anadas secciones que no esten en esta lista.',
+        ].join('\n')
+      : // Sin vinetas ni numeracion a proposito: el Mock Provider lee como seccion cada linea numerada.
+        [
+          `El encargo no fija las secciones: define tu la estructura mas adecuada para este tipo de landing (${project.basics.landingType}) y su publico.`,
+          'Empieza por un Hero que presente la propuesta y el CTA principal.',
+        ].join('\n'),
   );
 
-  add(
-    'COPY_REQUIREMENTS',
-    [
-      `- Tono: ${project.content.tone}`,
-      `- Mensaje principal: ${project.content.keyMessage || project.basics.description}`,
-      `- Caracteristicas: ${project.content.features.length > 0 ? project.content.features.join(', ') : 'derivalas del producto descrito'}`,
-      `- Beneficios: ${project.content.benefits.length > 0 ? project.content.benefits.join(', ') : 'traduce cada caracteristica a una consecuencia concreta'}`,
-      '',
-      'Todo el texto es definitivo: nombres, cifras y ejemplos coherentes con el proyecto.',
-      'Ningun marcador de posicion.',
-    ].join('\n'),
-  );
+  add('COPY_REQUIREMENTS', renderCopyRequirements(project));
 
   add('TECHNOLOGY', technology.block);
 
+  // Las interacciones son condicionales: la arquitectura puede no traer FAQ ni
+  // formulario, y exigirlos contradice "no anadas secciones que no esten".
   add(
     'FUNCTIONAL_REQUIREMENTS',
     [
       '- La navegacion movil abre y cierra de verdad.',
-      '- Las preguntas frecuentes se despliegan con control por teclado.',
-      '- El formulario valida en cliente y muestra un mensaje de exito o de error explicito.',
+      '- Si la pagina incluye preguntas frecuentes, se despliegan con control por teclado.',
+      '- Si incluye un formulario, valida en cliente y muestra un mensaje de exito o de error explicito.',
       '- Los enlaces internos apuntan a anclas que existen en el documento.',
       '- No hay errores en la consola del navegador.',
       '- Ninguna funcionalidad anunciada queda sin implementar.',
@@ -199,7 +187,7 @@ export function buildLandingPrompt(input: PromptBuildInput): BuiltPrompt {
       '- Puntos de ruptura minimos en 768px y 1024px.',
       '- A 360px de ancho no hay desbordamiento horizontal ni texto cortado.',
       '- Las areas tactiles miden al menos 44x44 px.',
-      '- Las retículas de 3 columnas pasan a 1 columna en movil, no a scroll lateral.',
+      '- Las reticulas de varias columnas pasan a 1 columna en movil, no a scroll lateral.',
     ].join('\n'),
   );
 
@@ -234,29 +222,32 @@ export function buildLandingPrompt(input: PromptBuildInput): BuiltPrompt {
     ].join('\n'),
   );
 
-  add(
-    'NEGATIVE_CONSTRAINTS',
-    [
-      'Estas restricciones son requisitos duros. Incumplir una invalida la entrega.',
-      '',
-      ...negativeConstraints.map((item) => `- ${item}`),
-    ].join('\n'),
-  );
+  if (negativeApplied) {
+    add(
+      'NEGATIVE_CONSTRAINTS',
+      [
+        'Estas restricciones son requisitos duros. Incumplir una invalida la entrega.',
+        '',
+        ...negativeConstraints.map((item) => `- ${item}`),
+      ].join('\n'),
+    );
+  }
+
+  // Lista declarativa: sin "verifica antes de responder" ni "corrigelo" (eso es
+  // "Bucles con subagentes") y sin "ningun elemento sin proposito" (eso es
+  // "Diseno sustractivo"). Cada criterio de tecnica entra solo con su tecnica.
+  const criteria = [
+    'Visual: jerarquia clara, composicion coherente y contraste suficiente.',
+    'UX: navegacion evidente, CTA inconfundible, flujo de lectura sin saltos.',
+    'Copy: adaptado al publico y al tono del proyecto.',
+    'Codigo: HTML semantico y valido, CSS organizado por bloques, JavaScript sin errores.',
+    ...(randomSeedString ? ['Direccion creativa: coherencia con la Seed String.'] : []),
+    ...(negativeApplied ? ['Restricciones: todas las restricciones negativas cumplidas.'] : []),
+  ];
 
   add(
     'QUALITY_CRITERIA',
-    [
-      'Antes de responder, verifica una por una:',
-      '',
-      '1. Visual: jerarquia clara, composicion coherente, contraste suficiente, identidad propia.',
-      '2. UX: navegacion evidente, CTA inconfundible, flujo de lectura sin saltos.',
-      '3. Copy: concreto, sin cliches, con micro-copy donde hace falta, adaptado al publico.',
-      '4. Codigo: HTML semantico y valido, CSS organizado por bloques, JavaScript sin errores.',
-      `5. Diseno: ningun elemento sin proposito, ningun patron generico${randomSeedString ? ', coherencia con la Seed String' : ''}.`,
-      '6. Restricciones: todas las restricciones negativas cumplidas.',
-      '',
-      'Si algun punto falla, corrigelo antes de entregar.',
-    ].join('\n'),
+    ['Criterios que debe cumplir la entrega:', '', ...criteria.map((item, index) => `${index + 1}. ${item}`)].join('\n'),
   );
 
   add(
@@ -284,21 +275,113 @@ export function buildLandingPrompt(input: PromptBuildInput): BuiltPrompt {
 
   const content = ordered.map((section) => `## ${section.title}\n${section.body}`).join('\n\n');
 
+  const systemInstruction = buildSystemInstruction({ negativeConstraints: negativeApplied });
+
   return {
-    systemInstruction: DEFAULT_SYSTEM_INSTRUCTION,
+    systemInstruction,
     content,
     sections: ordered,
     conflicts: technology.conflicts,
     technologyIds: technology.effective.map((tech) => tech.id),
     seedStringValue: randomSeedString,
     negativeConstraints,
-    estimatedTokens: estimateTokens(content) + estimateTokens(DEFAULT_SYSTEM_INSTRUCTION),
+    estimatedTokens: estimateTokens(content) + estimateTokens(systemInstruction),
     composedByLLM: false,
   };
 }
 
-/** Arquitectura de informacion: la definida en DEFINE, la del brief, o la base. */
-function resolveArchitecture(project: Project, define: DefineSpec | null | undefined): SectionSpec[] {
+/** Junta las restricciones base de la tecnica con las del proyecto, sin duplicados. */
+function mergeConstraints(base: readonly string[], own: readonly string[]): string[] {
+  const seen = new Set<string>();
+  const merged: string[] = [];
+  for (const item of [...base, ...own]) {
+    const text = item.trim();
+    const key = text.toLowerCase();
+    if (text.length === 0 || seen.has(key)) continue;
+    seen.add(key);
+    merged.push(text);
+  }
+  return merged;
+}
+
+/**
+ * Direccion visual. Solo lleva lo que el brief fija de verdad (proyectos
+ * creados cuando el asistente aun tenia el paso de estilo): ni lineas en
+ * blanco ni valores por defecto del esquema presentados como una eleccion.
+ * Si algo queda sin fijar, lo dice y delega la decision en quien redacta.
+ */
+function renderVisualDirection(
+  project: Project,
+  discover: DiscoverInsights | null | undefined,
+  seed: string | null,
+): string {
+  const { style, colors, typography, sophistication, references, avoid } = project.visual;
+  const lines: string[] = [];
+
+  if (style.trim()) lines.push(`- Estilo: ${style.trim()}`);
+  if (colors.length > 0) lines.push(`- Colores: ${colors.join(', ')}`);
+  if (typography.trim()) lines.push(`- Tipografia: ${typography.trim()}`);
+  // 3 es el valor por defecto del esquema y el asistente ya no pregunta por la
+  // sofisticacion: solo un valor distinto de 3 pudo elegirlo alguien.
+  if (sophistication !== 3) lines.push(`- Nivel de sofisticacion (1-5): ${sophistication}`);
+  if (references.length > 0) lines.push('- Referencias:', ...references.map((item) => `  - ${item}`));
+  if (avoid.length > 0) lines.push('- Evitar explicitamente:', ...avoid.map((item) => `  - ${item}`));
+
+  const fixedByUser = lines.length > 0;
+  const explored = discover?.visualDirections ?? [];
+  if (explored.length > 0) {
+    if (lines.length > 0) lines.push('');
+    lines.push(
+      'Direcciones visuales planteadas en el analisis DISCOVER (desarrolla una o combinalas con criterio):',
+      ...explored.map((item) => `  - ${item}`),
+    );
+  }
+
+  const basis = seed ? 'derivada de la Seed String (seccion SEED STRING)' : 'a partir del nicho y del publico del proyecto';
+  if (lines.length > 0) lines.push('');
+  lines.push(
+    fixedByUser
+      ? `Lo que no este fijado arriba (estilo, paleta o tipografia) lo decides tu, ${basis}.`
+      : `El encargo no fija estilo, paleta ni tipografia: la direccion visual es decision tuya, ${basis}.`,
+  );
+
+  return lines.join('\n');
+}
+
+/**
+ * Requisitos de copy. El mensaje principal, las caracteristicas y los beneficios
+ * solo aparecen si el brief los trae; lo que falta se delega en una sola linea
+ * "Contenido" (antes el mensaje principal caia a la descripcion entera, de hasta
+ * 1200 caracteres, presentada como si fuera la frase que debe quedarse el lector).
+ */
+function renderCopyRequirements(project: Project): string {
+  const { tone, keyMessage, features, benefits } = project.content;
+  const derived = [
+    ...(keyMessage.trim() ? [] : ['el mensaje principal']),
+    ...(features.length > 0 ? [] : ['las caracteristicas']),
+    ...(benefits.length > 0 ? [] : ['los beneficios']),
+  ];
+  const derivedText =
+    derived.length <= 1 ? derived.join('') : `${derived.slice(0, -1).join(', ')} y ${derived[derived.length - 1]}`;
+
+  return [
+    `- Tono: ${tone}`,
+    ...(keyMessage.trim() ? [`- Mensaje principal: ${keyMessage.trim()}`] : []),
+    ...(features.length > 0 ? [`- Caracteristicas: ${features.join(', ')}`] : []),
+    ...(benefits.length > 0 ? [`- Beneficios: ${benefits.join(', ')}`] : []),
+    ...(derived.length > 0 ? [`- Contenido: deduce ${derivedText} de la descripcion del producto.`] : []),
+    '',
+    'Todo el texto es definitivo y coherente con el proyecto. Ningun marcador de posicion.',
+  ].join('\n');
+}
+
+/**
+ * Arquitectura de informacion fijada por el usuario: la de DEFINE o la del
+ * brief. `null` si nadie la fijo: entonces la decide quien redacta el prompt.
+ * Antes habia una lista generica de 7 secciones; era igual para todos los
+ * proyectos y superaba el tope de 6 de "Diseno sustractivo".
+ */
+function resolveArchitecture(project: Project, define: DefineSpec | null | undefined): SectionSpec[] | null {
   if (define?.informationArchitecture && define.informationArchitecture.length > 0) {
     return [...define.informationArchitecture].sort((a, b) => a.order - b.order);
   }
@@ -314,7 +397,7 @@ function resolveArchitecture(project: Project, define: DefineSpec | null | undef
     }));
   }
 
-  return DEFAULT_SECTIONS;
+  return null;
 }
 
 const PURPOSES: Array<[RegExp, string]> = [

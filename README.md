@@ -35,7 +35,7 @@ Groq ni Ollama.
 | Módulo | Responsabilidad |
 | --- | --- |
 | **Dashboard** | Estado del sistema, atajos y observabilidad de las últimas ejecuciones. |
-| **Project Builder** | Asistente de 5 pasos: qué, para quién, con qué stack, con qué estilo, qué evitar. |
+| **Project Builder** | Asistente de 3 pasos: qué, para quién, con qué stack. El estilo, la estructura y las restricciones negativas no se preguntan: las decide el prompt según las técnicas elegidas. |
 | **Discover / Define** | Análisis del encargo (nicho, público, fricciones) y derivación de la arquitectura de información. |
 | **Technology Manager** | Las tecnologías son datos: cada una aporta instrucciones, restricciones y requisitos de salida al prompt. |
 | **Seed String Engine** | Si la técnica «Cadenas Semilla» está elegida, genera un string aleatorio en cada ejecución (técnica *String Seed of Thought*); no hay catálogo, lo manipula el propio modelo para derivar una dirección creativa. |
@@ -192,7 +192,7 @@ igualmente y **«Reintentar imágenes»** completa solo las pendientes. Comprué
 
 ## Flujo de trabajo
 
-1. **Proyectos → Nuevo proyecto.** Cinco pasos; solo los dos primeros son obligatorios.
+1. **Proyectos → Nuevo proyecto.** Tres pasos; solo los dos primeros son obligatorios.
 2. **Ejecutar DISCOVER** en la ficha del proyecto. Analiza el encargo y deriva la
    arquitectura de información.
 3. **Prompt Studio → Generar prompt.** El Prompt Engine compone el prompt real (con LLM si

@@ -60,7 +60,7 @@ composeAndPersistPrompt (landing-generator)
   4. guarda prompt + prompt_version  ◄── trazabilidad
         │
         ▼
-El usuario revisa el prompt ya compuesto (15-17 secciones según las técnicas) en pantalla
+El usuario revisa el prompt ya compuesto (14-17 secciones según las técnicas) en pantalla
         │
         ▼
 Usuario pulsa "Generar HTML"
@@ -211,7 +211,7 @@ propia aplicación tiene que entrar ya dentro del `srcDoc`.
 
 **Decisión.** Refinar y generar variantes incrustan solo siete secciones del encargo
 original (`CONTEXT`, `TARGET_AUDIENCE`, `BUSINESS_GOAL`, `VISUAL_DIRECTION`, `SEED_STRING`,
-`COPY_REQUIREMENTS`, `NEGATIVE_CONSTRAINTS`), no las 17.
+`COPY_REQUIREMENTS`, `NEGATIVE_CONSTRAINTS` si el encargo la llevaba), no las 17.
 
 **Motivo.** Esas peticiones ya envían el HTML completo. El stack, la arquitectura de
 información y los criterios de calidad están encarnados en ese documento: repetirlos
@@ -256,8 +256,9 @@ más al LLM antes de guardarlo como versión definitiva:
    [`SEED_ENGINE_MIGRATION.md`](SEED_ENGINE_MIGRATION.md)), pero sigue siendo una técnica de
    diseño más, y el prompt lleva únicamente las que se eligieron. Sin ella no hay string, ni
    sección `SEED STRING`, ni esta llamada.
-2. **`composePromptViaLLM`** reescribe el borrador (entre 15 y 17 secciones según las técnicas
+2. **`composePromptViaLLM`** reescribe el borrador (entre 14 y 17 secciones según las técnicas
    elegidas). El stack tecnológico (lo elige el usuario, no el LLM), las restricciones negativas
+   (solo si está elegida esa técnica)
    y el bloque de técnicas de diseño (`SUBTRACTIVE DESIGN`) viajan como bloques que el modelo
    debe copiar tal cual. Si hay Seed, la sección `SEED STRING` es distinta a propósito: en el
    borrador solo trae el string en crudo, y es este mismo modelo quien debe **manipularlo**
@@ -516,6 +517,77 @@ reescribiendo la etiqueta tal cual estaba.
 - La política de almacenamiento de Supabase (bucket y políticas de `storage.objects` en
   `schema.sql`/`policies.sql`) **no se ha ejecutado contra una base real**: si `db:setup` no puede
   crearla, el bucket se crea a mano (público) desde el panel. `db:check` avisa si falta.
+
+### 13. El brief no fija estilo, estructura ni restricciones; las restricciones negativas son una técnica
+
+**Decisión.** El asistente de proyectos tiene 3 pasos (qué, para quién, con qué tecnología). Se
+eliminaron «¿Qué estilo buscas?» y «¿Qué quieres evitar?», y con ellos estilo, colores, tipografía,
+sofisticación, referencias, secciones, características, beneficios y restricciones negativas del
+brief. Después se quitó también del paso 3 el campo «Restricciones técnicas» (ver más abajo).
+Tres reglas lo sostienen:
+
+1. **Todo lo que sea técnica se aplica solo al elegirla.** El texto base del borrador es neutro: no
+   lleva versiones parciales de ninguna técnica (`verify:prompt`, `TECHNIQUE_LEAK_MARKERS`).
+2. **Las restricciones negativas son la técnica `negative-constraints-plus`.** Sin ella no existe la
+   sección `NEGATIVE CONSTRAINTS`, ni el criterio de calidad #6, ni la regla 7 de la instrucción de
+   sistema (`buildSystemInstruction`). La lista base (`BASE_NEGATIVE_CONSTRAINTS`) es de la técnica y
+   ya no se precarga en el proyecto.
+3. **Lo que el brief no fija, el borrador lo delega; no lo inventa.** Frases como «es decisión tuya»
+   o «define tú la estructura» le dicen al compositor LLM que debe escribir contenido concreto, y
+   sus reglas se reescribieron para eso (el modelo ya no «reescribe hechos»: crea dirección visual y
+   arquitectura a partir del nicho, el público y DISCOVER).
+
+**Motivo.** Cada uno de esos pasos predefinía una parte del prompt que las técnicas también
+decidían, y el prompt se contradecía a sí mismo (medido):
+
+| El brief fijaba | Chocaba con |
+| --- | --- |
+| Estilo, colores, tipografía | «Cadenas Semilla», que debe decidir la dirección creativa |
+| 7 secciones por defecto | El tope de 6 de «Diseño sustractivo» |
+| La restricción «sin layout genérico de SaaS: hero + tarjetas + FAQ» | Esas mismas 7 secciones por defecto |
+| Diez restricciones negativas siempre presentes | «Restricciones reforzadas» y «Redacción humana», que dicen lo mismo |
+
+Además, el texto fijo ya aplicaba versiones parciales de técnicas no elegidas (auditoría de
+elementos, bucle de autorrevisión, reglas de redacción): activar o desactivar una técnica cambiaba
+menos de lo que parecía, y 5 de 5 prompts compuestos por Groq traían auto-verificación sin haber
+elegido «Bucles con subagentes».
+
+**Lo que este cambio NO resuelve: la similitud entre prompts.** Medido en el borrador determinista
+con dos proyectos distintos (una agenda de cerámica y una expedición de montaña), antes compartían
+el 92 % de las líneas y ahora el 94 %: `VISUAL DIRECTION`, `COPY REQUIREMENTS` y la arquitectura
+pasaron de texto fijo con datos por defecto a frases de delegación que también son iguales para
+todos. El cambio elimina contradicciones; la variedad tiene que venir ahora del LLM compositor, que
+es quien escribe esas tres secciones. No se midió con un proveedor real tras el cambio.
+
+**Restricciones técnicas.** El paso 3 ofrecía «sin dependencias externas», «un único archivo HTML»,
+«sin cookies» y «menos de 150 KB». Eran del mismo tipo que lo anterior: decisiones fijadas a mano
+que chocan con lo que el usuario elige después. «Un único archivo HTML» y «menos de 150 KB» chocan
+con «Generación de imágenes» (cada JPEG pesa ~500 KB y la exportación los incrusta) y con cualquier
+stack que no sea HTML puro; «sin dependencias externas» choca con el CDN de Tailwind y de
+Bootstrap, que el propio bloque `TECHNOLOGY` exige. Quien redacta el prompt las derivaba solo de
+esa lista, y llegaban a `FUNCTIONAL REQUIREMENTS` como si fueran requisitos funcionales. Las
+restricciones propias de cada tecnología siguen donde estaban (`constraints` de la tecnología, en
+el bloque `TECHNOLOGY`): esas las elige el usuario al marcar la tecnología.
+
+**Alternativas.** Mantener los pasos como opcionales (sigue habiendo choque si se rellenan); dejar
+una lista de restricciones fija fuera de las técnicas (rompe «solo las técnicas elegidas»).
+
+**Coste y límites conocidos.**
+
+- Los campos siguen en el modelo, el esquema y Supabase como opcionales para no romper proyectos
+  antiguos; si traen datos se respetan (la sofisticación solo si es distinta de 3, el valor por
+  defecto del esquema; las restricciones técnicas, en `FUNCTIONAL REQUIREMENTS`). Las restricciones
+  negativas propias de un proyecto antiguo solo se aplican si la técnica está elegida.
+- «Framework principal» y «Librerías adicionales» siguen en el paso 3 aunque **no llegan al prompt**
+  (nada los lee); su ayuda dice «se añade al contexto del prompt», y no es cierto.
+- Sin estilo ni estructura en el brief, un modelo tiende a converger en lo más probable (en 4 de 4
+  ejecuciones medidas, «Minimalista»). Lo mitigan la Seed (si está elegida) y las direcciones de
+  DISCOVER, que ahora sí entran al prompt; no está medido con el brief nuevo ni con otros proyectos.
+- DEFINE sigue generando una arquitectura por defecto de 6 secciones cuando se ejecuta sin secciones
+  en el brief (`buildDefineSpec`), y esa arquitectura sí se fija en el prompt. Es una acción
+  explícita del usuario, pero predefine la estructura igual que lo hacía el paso eliminado.
+- La instrucción de sistema del catálogo (`landing-generator.system`) es solo un dato de
+  referencia; la que se usa es `buildSystemInstruction`.
 
 ---
 

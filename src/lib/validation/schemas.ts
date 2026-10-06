@@ -78,7 +78,8 @@ export const projectContentSchema = z.object({
 
 export const createProjectSchema = z.object({
   basics: projectBasicsSchema,
-  visual: projectVisualSchema,
+  // El asistente ya no pregunta por el estilo (3 pasos): `visual` puede omitirse.
+  visual: z.preprocess((value) => value ?? {}, projectVisualSchema),
   technical: projectTechnicalSchema,
   content: projectContentSchema,
   negativeConstraints: stringList(30),

@@ -23,7 +23,14 @@ import { register } from 'node:module';
 register('./lib/ts-resolve-hook.mjs', import.meta.url);
 
 const engine = await import(new URL('../src/services/prompt-engine/index.ts', import.meta.url).href);
-const { buildLandingPrompt, composePromptViaLLM, DESIGN_TECHNIQUES, DEFAULT_TECHNIQUE_IDS } = engine;
+const {
+  buildLandingPrompt,
+  buildSystemInstruction,
+  composePromptViaLLM,
+  DESIGN_TECHNIQUES,
+  DEFAULT_TECHNIQUE_IDS,
+  BASE_NEGATIVE_CONSTRAINTS,
+} = engine;
 
 let failures = 0;
 const check = (ok, label, extra = '') => {
@@ -71,6 +78,52 @@ const draftFor = (techniqueIds) =>
 const hasSection = (prompt, id) => prompt.sections.some((section) => section.id === id);
 const hasTechniqueText = (text, id) => text.includes(byId[id].instruction);
 
+// Brief tal y como lo deja el asistente de 3 pasos: sin estilo, secciones, caracteristicas ni
+// restricciones. Solo quedan los valores por defecto del esquema (sofisticacion 3, tono).
+const emptyProject = {
+  ...project,
+  visual: { style: '', colors: [], typography: '', sophistication: 3, references: [], avoid: [] },
+  content: { tone: 'directo', keyMessage: '', features: [], benefits: [], sections: [] },
+  negativeConstraints: [],
+};
+// Proyecto creado cuando el asistente aun tenia los pasos 4 y 5: sus datos se respetan.
+const legacyProject = {
+  ...project,
+  visual: { style: 'documental, crudo', colors: ['#1b1b1b'], typography: 'grotesca condensada', sophistication: 4, references: ['Magnum'], avoid: ['stock'] },
+  content: { tone: 'sobrio', keyMessage: 'Hecho a mano', features: ['Cosido a mano'], benefits: ['Dura decadas'], sections: ['Hero', 'Beneficios', 'CTA final'] },
+  technical: { technologyIds: [], constraints: ['Sin cookies'] },
+  negativeConstraints: ['Sin carruseles.'],
+};
+const draftOf = (proj, techniqueIds) =>
+  buildLandingPrompt({
+    project: proj,
+    technologies: [],
+    randomSeedString: SEED,
+    negativeConstraints: proj.negativeConstraints,
+    designTechniques: techniqueIds,
+    discover: null,
+    define: null,
+  });
+const sectionBody = (prompt, id) => prompt.sections.find((section) => section.id === id)?.body ?? '';
+const norm = (text) => text.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+
+/**
+ * Frases del texto BASE que antes eran versiones parciales de una tecnica
+ * (auditoria de elementos, bucle de autorrevision, reglas de redaccion, antipatrones).
+ * Con la regla "una tecnica solo se aplica al elegirla" no pueden aparecer nunca.
+ */
+const TECHNIQUE_LEAK_MARKERS = [
+  'ningun elemento sin proposito',
+  'compite con el',
+  'antes de responder, verifica',
+  'corrigelo antes de entregar',
+  'sin cliches, con micro-copy',
+  'usa su vocabulario',
+  'identidad propia',
+  'ningun patron generico',
+  'clientes exigentes',
+];
+
 /* ------------------- 1. borrador: las 256 combinaciones ------------------- */
 
 {
@@ -101,6 +154,104 @@ const hasTechniqueText = (text, id) => text.includes(byId[id].instruction);
     if (imagesSelected && outputFormat.includes('se sustituyen por SVG inline')) fail('OUTPUT_FORMAT contradice la tecnica de imagenes');
   }
   check(bad === 0, `Borrador respeta la seleccion en las ${1 << ids.length} combinaciones`, problems.join(' | '));
+}
+
+/* ---- 1b. restricciones negativas solo con su tecnica; texto base neutro; brief vacio ---- */
+
+{
+  const NEG = 'negative-constraints-plus';
+  const problems = [];
+  let bad = 0;
+  for (const proj of [emptyProject, legacyProject]) {
+    const label = proj === emptyProject ? 'brief vacio' : 'brief con datos';
+    for (let mask = 0; mask < 1 << ids.length; mask += 1) {
+      const selected = ids.filter((_, index) => mask & (1 << index));
+      const draft = draftOf(proj, selected);
+      const text = norm(draft.content);
+      const negSelected = selected.includes(NEG);
+      const fail = (why) => {
+        bad += 1;
+        if (problems.length < 6) problems.push(`(${label}) [${selected.join(',') || 'ninguna'}] ${why}`);
+      };
+
+      // Restricciones negativas: existen si y solo si esta elegida la tecnica.
+      if (hasSection(draft, 'NEGATIVE_CONSTRAINTS') !== negSelected) fail('seccion NEGATIVE CONSTRAINTS');
+      if ((draft.negativeConstraints.length > 0) !== negSelected) fail('lista negativeConstraints');
+      for (const item of BASE_NEGATIVE_CONSTRAINTS) {
+        if (draft.content.includes(item) !== negSelected) fail(`restriccion base "${item.slice(0, 24)}"`);
+      }
+      if (negSelected && proj === legacyProject && !draft.content.includes('Sin carruseles.')) fail('pierde una restriccion propia del proyecto');
+      if (!negSelected && proj === legacyProject && draft.content.includes('Sin carruseles.')) fail('aplica una restriccion propia sin la tecnica');
+      if (!negSelected && /restricciones? negativas?|requisitos duros/.test(text)) fail('menciona restricciones negativas sin la tecnica');
+      if (!negSelected && /restricciones negativas/.test(norm(draft.systemInstruction))) fail('el sistema habla de restricciones negativas');
+      if (negSelected && !/restricciones negativas/.test(norm(draft.systemInstruction))) fail('el sistema no menciona las restricciones');
+      if (draft.systemInstruction !== buildSystemInstruction({ negativeConstraints: negSelected })) fail('systemInstruction');
+
+      // Texto base neutro: ninguna version parcial de una tecnica.
+      for (const marker of TECHNIQUE_LEAK_MARKERS) if (text.includes(marker)) fail(`texto base con rastro de tecnica: "${marker}"`);
+
+      // Restricciones tecnicas: el asistente ya no las pregunta. Un proyecto nuevo no emite el bloque;
+      // uno antiguo que las tenga las conserva (no son una tecnica, son datos del proyecto).
+      if (proj === emptyProject && /restricciones tecnicas del proyecto/.test(text)) fail('bloque de restricciones tecnicas sin datos');
+      if (proj === legacyProject && !draft.content.includes('- Sin cookies')) fail('pierde una restriccion tecnica fijada');
+
+      // Sin valores fantasma: ni viñetas vacias ni la sofisticacion por defecto presentada como eleccion.
+      // Una viñeta "- Campo:" sin valor solo es valida si le siguen subviñetas ("- Referencias:").
+      if (/^[ \t]*-[ \t]+[^:\n]+:[ \t]*(?:\n(?![ \t]+-[ \t])|(?![\s\S]))/m.test(draft.content)) fail('vineta vacia');
+      // (el texto de "Prompts Ambiciosos" habla de la sofisticacion del mercado: se mira la linea de VISUAL DIRECTION)
+      if (proj === emptyProject && /nivel de sofisticacion \(1-5\)/.test(text)) fail('sofisticacion fantasma');
+      if (proj === legacyProject && !/nivel de sofisticacion \(1-5\): 4/.test(text)) fail('pierde la sofisticacion fijada');
+    }
+  }
+  check(bad === 0, `Restricciones negativas solo con su tecnica, base neutra y sin valores fantasma (${2 * (1 << ids.length)} borradores)`, problems.join(' | '));
+}
+
+{
+  const draft = draftOf(emptyProject, DEFAULT_TECHNIQUE_IDS);
+  const visual = norm(sectionBody(draft, 'VISUAL_DIRECTION'));
+  const architecture = sectionBody(draft, 'INFORMATION_ARCHITECTURE');
+  const copy = sectionBody(draft, 'COPY_REQUIREMENTS');
+  const functional = sectionBody(draft, 'FUNCTIONAL_REQUIREMENTS');
+  check(visual.includes('decision tuya') && visual.includes('seed string'), 'Brief vacio con Seed: VISUAL DIRECTION delega la decision y la liga a la Seed');
+  check(
+    architecture.includes('define tu la estructura') && !/^\s*\d+\./m.test(architecture),
+    'Brief vacio: la arquitectura se delega (sin lista generica ni lineas numeradas)',
+  );
+  check(copy.includes('Contenido: deduce') && !copy.includes('Caracteristicas:'), 'Brief vacio: sin caracteristicas ni beneficios inventados');
+  check(
+    functional.includes('Si la pagina incluye preguntas frecuentes') && functional.includes('Si incluye un formulario'),
+    'FUNCTIONAL REQUIREMENTS no exige FAQ ni formulario si la pagina no los lleva',
+  );
+  check(!/cifras y ejemplos/.test(norm(copy)), 'COPY REQUIREMENTS no pide cifras ni ejemplos que el brief no aporta');
+  check(
+    !copy.includes(emptyProject.basics.description) && !copy.includes('Mensaje principal:') && copy.includes('deduce el mensaje principal'),
+    'Sin mensaje principal: no se usa la descripcion entera como si lo fuera, se delega',
+  );
+
+  const noSeed = norm(sectionBody(draftOf(emptyProject, ['subtractive-design']), 'VISUAL_DIRECTION'));
+  check(noSeed.includes('nicho y del publico') && !noSeed.includes('seed'), 'Brief vacio sin Seed: la direccion visual sale del nicho y del publico');
+
+  const legacy = draftOf(legacyProject, []);
+  check(
+    /^1\. Hero/m.test(sectionBody(legacy, 'INFORMATION_ARCHITECTURE')) &&
+      sectionBody(legacy, 'COPY_REQUIREMENTS').includes('Caracteristicas: Cosido a mano') &&
+      sectionBody(legacy, 'VISUAL_DIRECTION').includes('Estilo: documental, crudo'),
+    'Proyecto con datos: se respetan secciones, caracteristicas y estilo fijados',
+  );
+
+  const explored = buildLandingPrompt({
+    project: emptyProject,
+    technologies: [],
+    randomSeedString: null,
+    negativeConstraints: [],
+    designTechniques: [],
+    discover: { niche: 'n', audienceInsight: '', valueProposition: 'v', context: 'c', differentiators: [], visualDirections: ['Archivo notarial', 'Taller de encuadernacion'], marketSophistication: 3, frictions: [], generatedAt: null },
+    define: null,
+  });
+  check(
+    sectionBody(explored, 'VISUAL_DIRECTION').includes('Archivo notarial'),
+    'Las direcciones visuales de DISCOVER entran en el prompt (antes se descartaban)',
+  );
 }
 
 /* --------------- 2. composicion con LLM: modelos que no obedecen --------------- */
@@ -168,6 +319,35 @@ const DEFAULTS = DEFAULT_TECHNIQUE_IDS;
   check(!error && !hasSection(built, 'SEED_STRING'), 'Sin "Cadenas Semilla": una SEED STRING inventada se descarta', error?.message ?? '');
 }
 
+// b2) sin "Restricciones negativas", el modelo inventa una seccion NEGATIVE CONSTRAINTS
+{
+  const selected = ['seed-strings', 'subtractive-design'];
+  const draft = draftFor(selected);
+  const { built, error } = await compose(draft, selected, (sections) =>
+    join([...sections, { title: 'NEGATIVE CONSTRAINTS', body: '- Sin degradados morados.\n- Sin sombras.' }]),
+  );
+  check(
+    !error && !hasSection(built, 'NEGATIVE_CONSTRAINTS') && built.negativeConstraints.length === 0,
+    'Sin "Restricciones negativas": una seccion NEGATIVE CONSTRAINTS inventada se descarta',
+    error?.message ?? '',
+  );
+}
+
+// b3) con la tecnica, la seccion sobrevive tal cual aunque el modelo la reescriba
+{
+  const draft = draftFor(DEFAULT_TECHNIQUE_IDS);
+  const { built, error } = await compose(draft, DEFAULT_TECHNIQUE_IDS, (sections) =>
+    join(setBody(sections, 'NEGATIVE CONSTRAINTS', '- Sin nada.')),
+  );
+  check(
+    !error &&
+      BASE_NEGATIVE_CONSTRAINTS.every((item) => built.content.includes(item)) &&
+      !built.content.includes('- Sin nada.'),
+    'Con "Restricciones negativas": su seccion se restaura del borrador aunque el modelo la reescriba',
+    error?.message ?? '',
+  );
+}
+
 // c) el modelo reescribe (y pierde) el texto de las tecnicas elegidas
 {
   const draft = draftFor(DEFAULTS);
@@ -201,6 +381,8 @@ const DEFAULTS = DEFAULT_TECHNIQUE_IDS;
     ['redaccion humana', 'COPY REQUIREMENTS', 'Usa longitud variable de frase para dar ritmo.', ONLY_AMBITIOUS],
     ['subagentes', 'OBJECTIVE', 'Actua como tu propio critico antes de entregar.', ['human-writing']],
     ['imagenes', 'VISUAL DIRECTION', 'Para cada foto, escribe un marcador sin atributo src.', NONE],
+    ['restricciones negativas', 'VISUAL DIRECTION', 'Sin degradados morados ni azul-a-violeta.', NONE],
+    ['restricciones negativas (texto de la tecnica)', 'COPY REQUIREMENTS', 'Evita los tics que delatan contenido generado por IA.', ONLY_AMBITIOUS],
   ];
   for (const [label, title, extra, selected] of cases) {
     const draft = draftFor(selected);
@@ -259,6 +441,39 @@ const DEFAULTS = DEFAULT_TECHNIQUE_IDS;
     (request?.system ?? '').includes('manipular ese string') && !(request?.system ?? '').includes('NO eligio ninguna tecnica'),
     'Con tecnicas y Seed: el sistema pide derivar la direccion de la Seed',
   );
+}
+
+/* ----- 4. las reglas del compositor describen el borrador y delegan lo que el brief no fija ----- */
+
+{
+  const sys = async (selected, proj = emptyProject) =>
+    (await compose(draftOf(proj, selected), selected, (sections) => join(sections))).request?.system ?? '';
+
+  const none = await sys(NONE);
+  check(
+    none.includes('NO eligio restricciones negativas') && !none.includes('La seccion NEGATIVE CONSTRAINTS es la UNICA'),
+    'Sin "Restricciones negativas": el sistema prohibe al modelo escribirlas',
+  );
+  check(!/eligio el stack, las tecnicas de diseno y las restricciones negativas/.test(none), 'Sin tecnicas: no dice que el usuario eligio restricciones');
+
+  const withNeg = await sys(DEFAULTS);
+  check(
+    withNeg.includes('La seccion NEGATIVE CONSTRAINTS es la UNICA') &&
+      withNeg.includes('el usuario ya eligio el stack, las tecnicas de diseno y las restricciones negativas') &&
+      !withNeg.includes('NO eligio restricciones negativas'),
+    'Con "Restricciones negativas": el sistema la declara decidida de antemano y unica con prohibiciones',
+  );
+
+  for (const [label, text] of [['sin tecnicas', none], ['con tecnicas', withNeg]]) {
+    check(
+      text.includes('es decision tuya') && text.includes('define tu la estructura') && text.includes('ni inventar hechos'),
+      `Compositor (${label}): delega direccion visual, arquitectura y copy cuando el brief no las fija, sin inventar hechos`,
+    );
+    check(
+      text.includes('FUNCTIONAL REQUIREMENTS solo puede exigir interacciones'),
+      `Compositor (${label}): FUNCTIONAL REQUIREMENTS debe ser coherente con la arquitectura que escriba`,
+    );
+  }
 }
 
 console.log(failures === 0 ? '\nTODO CORRECTO' : `\n${failures} comprobacion(es) fallida(s)`);

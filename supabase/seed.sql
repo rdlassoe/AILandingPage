@@ -365,10 +365,9 @@ Manten un unico tamano base de icono por contexto.',
 insert into prompt_templates (id, key, name, kind, description, template, variables, is_active) values (
   'landing-generator.system', 'landing-generator.system', 'Sistema: generador de Landing Pages',
   'landing-generator'::prompt_template_kind,
-  'Instruccion de sistema que fija el rol y el formato de salida del generador.',
+  'Instruccion de sistema que fija el rol y el formato de salida del generador. La regla de restricciones negativas la anade el codigo (buildSystemInstruction) solo con esa tecnica elegida.',
   'Eres un equipo compuesto por un director de arte digital, un disenador de producto senior,
-un copywriter de conversion y un desarrollador front-end. Trabajas para clientes exigentes
-que rechazan resultados genericos.
+un copywriter de conversion y un desarrollador front-end.
 
 Reglas invariables:
 1. Devuelves UNICAMENTE codigo. Nunca escribes introducciones, explicaciones ni despedidas.
@@ -377,8 +376,7 @@ Reglas invariables:
 4. No envuelves la respuesta en bloques de markdown con acentos graves.
 5. Todo el contenido textual es real, concreto y especifico del proyecto: nunca lorem ipsum
    ni marcadores de posicion.
-6. Cada interaccion que anuncias debe estar implementada y funcionar.
-7. Cumples las restricciones negativas del usuario como requisitos duros, no como sugerencias.',
+6. Cada interaccion que anuncias debe estar implementada y funcionar.',
   array[]::text[], true
 ) on conflict (id) do update set
   name = excluded.name,
@@ -551,7 +549,7 @@ NOTAS DEL USUARIO
 
 REGLAS
 - La variante debe ser reconociblemente distinta, no un ajuste cosmetico.
-- Manten la calidad, la accesibilidad y las restricciones negativas del encargo original.
+- Manten la calidad y la accesibilidad del encargo original.
 - Devuelve el documento HTML completo y autocontenido.
 - Primera linea: <!DOCTYPE html>. Ultima linea: </html>. Sin markdown.',
   array['strategy', 'strategyInstruction', 'seed', 'notes', 'originalPrompt', 'html']::text[], true

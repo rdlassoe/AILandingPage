@@ -183,6 +183,13 @@ cuando el usuario **no** la eligió. Elige frases largas y propias de la técnic
 podría salir de una redacción legítima) y no menciones la Seed en su texto: una técnica no puede
 referirse a otra que quizá no esté elegida. Después ejecuta `npm run verify:prompt`.
 
+**Una técnica se aplica solo al elegirla.** No metas en el texto fijo de `prompt-engine/index.ts`
+una versión resumida de lo que hace una técnica («ningún elemento sin propósito», «verifica y
+corrige antes de entregar»…): activarla o desactivarla dejaría de cambiar el prompt, y el compositor
+LLM recibiría un borrador que contradice su regla de no aplicar técnicas no elegidas. Si la técnica
+añade además su propia sección (como la Seed o las restricciones negativas), esa sección existe solo
+con ella y nada del resto del prompt puede remitir a ella.
+
 ### Un proveedor LLM
 
 Ver [`LLM_PROVIDERS.md`](LLM_PROVIDERS.md).
@@ -340,9 +347,22 @@ y sustituye `runLLM` por respuestas simuladas —nunca llama a un modelo—. Com
    otra sección. Y que uno que obedece no dispara falsos positivos.
 3. **La petición al modelo** describe el borrador real (número y títulos de secciones) y no habla
    de «17 secciones».
+4. **Restricciones negativas, texto base neutro y brief vacío**, en las 256 combinaciones con un
+   brief sin estilo, secciones ni restricciones y con otro con datos (512 borradores):
+   `NEGATIVE CONSTRAINTS`, la lista base, la regla de la instrucción de sistema y cualquier mención
+   a «restricciones negativas» existen si y solo si está elegida esa técnica; ninguna frase del
+   texto base equivale a una técnica (`TECHNIQUE_LEAK_MARKERS`); no hay viñetas vacías ni la
+   sofisticación por defecto presentada como elección; el mensaje principal no cae a la
+   descripción. Además: las direcciones de DISCOVER llegan al prompt, y las reglas del compositor
+   describen lo que de verdad hay (con o sin restricciones, delegando lo que el brief no fija).
 
 Prueba lo que el código garantiza, no lo que haría un modelo concreto. `verify:flow` añade el
-recorrido por la API real (`POST /api/prompts/compose` con `[]` y con una técnica suelta).
+recorrido por la API real (`POST /api/prompts/compose` con `[]` y con una técnica suelta, que ya no
+trae `NEGATIVE CONSTRAINTS`).
+
+Al ampliar este script se comprobó que las comprobaciones nuevas detectan de verdad: reintroducir a
+propósito «corrígelo antes de entregar» en el texto base, o hacer que `NEGATIVE CONSTRAINTS`
+vuelva a existir siempre, las hace fallar.
 
 Para ejecutar más módulos de `src/` de esta forma basta importarlos desde un script que registre
 el hook; ojo con `@/services/llm-orchestrator`, que el hook sustituye siempre por el stub.

@@ -1,5 +1,4 @@
 import { parseBody, searchParam, withContext } from '@/app/api/_lib/route-helpers';
-import { DEFAULT_NEGATIVE_CONSTRAINTS } from '@/lib/data/catalog';
 import { createProjectSchema } from '@/lib/validation/schemas';
 import type { ProjectStatus } from '@/types/domain';
 
@@ -25,8 +24,9 @@ export async function POST(request: Request) {
       visual: input.visual,
       technical: input.technical,
       content: input.content,
-      negativeConstraints:
-        input.negativeConstraints.length > 0 ? input.negativeConstraints : DEFAULT_NEGATIVE_CONSTRAINTS,
+      // Sin lista por defecto: las restricciones negativas son una tecnica del prompt.
+      // Aqui solo caben las que declare el cliente de la API por su cuenta.
+      negativeConstraints: input.negativeConstraints,
       discover: null,
       define: null,
     });

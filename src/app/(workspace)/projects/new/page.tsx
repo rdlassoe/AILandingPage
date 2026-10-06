@@ -17,7 +17,7 @@ export default async function NewProjectPage() {
       <PageHeader
         eyebrow="Discover"
         title="Nuevo proyecto"
-        description="Cinco preguntas. Solo las dos primeras son obligatorias; el resto tiene valores por defecto que podras cambiar despues."
+        description="Tres pasos. Solo los dos primeros son obligatorios. El estilo, la estructura y las restricciones se deciden al componer el prompt, con las tecnicas que elijas."
       />
       <PageBody>
         <ProjectWizard technologies={technologies} />

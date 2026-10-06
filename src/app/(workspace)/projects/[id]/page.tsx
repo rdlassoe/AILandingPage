@@ -40,6 +40,17 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   const provider = getProvider(env.llm.defaultProvider);
   const usingMock = !provider.isConfigured();
 
+  // El asistente ya no pregunta por estilo ni restricciones: solo se muestran estos
+  // paneles en proyectos antiguos que si los tienen (sin valores por defecto fantasma).
+  const { visual } = project;
+  const hasVisualBrief =
+    visual.style.trim() !== '' ||
+    visual.typography.trim() !== '' ||
+    visual.colors.length > 0 ||
+    visual.references.length > 0 ||
+    visual.avoid.length > 0 ||
+    visual.sophistication !== 3;
+
   return (
     <>
       <PageHeader
@@ -128,11 +139,12 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
               </PanelBody>
             </Panel>
 
+            {hasVisualBrief ? (
             <Panel>
               <PanelHeader
                 eyebrow="Direccion visual"
                 title="Estilo"
-                description="La Seed String se genera de nuevo en cada ejecucion (tecnica SSoT): se ve en la ficha de la Landing Page una vez generada, no aqui."
+                description="Fijada en el proyecto. Lo que no este aqui lo decide quien redacta el prompt."
               />
               <PanelBody>
                 <DefinitionList
@@ -164,6 +176,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
                 />
               </PanelBody>
             </Panel>
+            ) : null}
 
             <Panel>
               <PanelHeader eyebrow="Stack" title="Tecnologias" />
@@ -198,11 +211,12 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
               </PanelBody>
             </Panel>
 
+            {project.negativeConstraints.length > 0 ? (
             <Panel>
               <PanelHeader
                 eyebrow="Restricciones negativas"
-                title={`${project.negativeConstraints.length} reglas duras`}
-                description="Se inyectan en el prompt como requisitos, no como sugerencias."
+                title={`${project.negativeConstraints.length} reglas propias`}
+                description="Se anaden a la lista de la tecnica Restricciones negativas, y solo si esa tecnica esta elegida en el Prompt Studio."
               />
               <PanelBody>
                 <ul className="grid gap-1 text-sm text-muted">
@@ -217,6 +231,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
                 </ul>
               </PanelBody>
             </Panel>
+            ) : null}
 
             <Panel>
               <PanelHeader eyebrow="Trazabilidad" title="Historial" />

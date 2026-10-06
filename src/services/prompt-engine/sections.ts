@@ -50,18 +50,32 @@ export const SECTION_ORDER: PromptSectionId[] = [
   'OUTPUT_FORMAT',
 ];
 
-/** Instruccion de sistema por defecto si no hay plantilla en base de datos. */
-export const DEFAULT_SYSTEM_INSTRUCTION = [
-  'Eres un equipo compuesto por un director de arte digital, un disenador de producto senior,',
-  'un copywriter de conversion y un desarrollador front-end. Trabajas para clientes exigentes',
-  'que rechazan resultados genericos.',
-  '',
-  'Reglas invariables:',
-  '1. Devuelves UNICAMENTE codigo. Nunca escribes introducciones, explicaciones ni despedidas.',
-  '2. La primera linea de tu respuesta es exactamente "<!DOCTYPE html>".',
-  '3. La ultima linea de tu respuesta es exactamente "</html>".',
-  '4. No envuelves la respuesta en bloques de markdown.',
-  '5. Todo el contenido textual es real y especifico del proyecto: nunca lorem ipsum.',
-  '6. Cada interaccion que anuncias debe estar implementada y funcionar.',
-  '7. Cumples las restricciones negativas como requisitos duros, no como sugerencias.',
-].join('\n');
+const SYSTEM_RULES = [
+  'Devuelves UNICAMENTE codigo. Nunca escribes introducciones, explicaciones ni despedidas.',
+  'La primera linea de tu respuesta es exactamente "<!DOCTYPE html>".',
+  'La ultima linea de tu respuesta es exactamente "</html>".',
+  'No envuelves la respuesta en bloques de markdown.',
+  'Todo el contenido textual es real y especifico del proyecto: nunca lorem ipsum.',
+  'Cada interaccion que anuncias debe estar implementada y funcionar.',
+];
+
+const NEGATIVE_CONSTRAINTS_RULE = 'Cumples las restricciones negativas como requisitos duros, no como sugerencias.';
+
+/**
+ * Instruccion de sistema de la generacion. Solo habla de restricciones
+ * negativas si el prompt las lleva (tecnica `negative-constraints-plus`): una
+ * regla que remite a algo que no existe contradice al propio prompt.
+ */
+export function buildSystemInstruction(options: { negativeConstraints?: boolean } = {}): string {
+  const rules = options.negativeConstraints ? [...SYSTEM_RULES, NEGATIVE_CONSTRAINTS_RULE] : SYSTEM_RULES;
+  return [
+    'Eres un equipo compuesto por un director de arte digital, un disenador de producto senior,',
+    'un copywriter de conversion y un desarrollador front-end.',
+    '',
+    'Reglas invariables:',
+    ...rules.map((rule, index) => `${index + 1}. ${rule}`),
+  ].join('\n');
+}
+
+/** Instruccion de sistema neutra (sin restricciones negativas): respaldo de refinar y variar. */
+export const DEFAULT_SYSTEM_INSTRUCTION = buildSystemInstruction();
