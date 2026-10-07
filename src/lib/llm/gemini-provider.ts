@@ -6,6 +6,7 @@ import { env } from '@/lib/env';
 import {
   DEFAULT_GENERATION_CONFIG,
   LLMError,
+  type EffectiveCredentials,
   type FinishReason,
   type LLMProvider,
   type LLMRequest,
@@ -38,17 +39,17 @@ export class GeminiProvider implements LLMProvider {
     return env.gemini.defaultModel || 'gemini-flash-latest';
   }
 
-  isConfigured(): boolean {
-    return env.gemini.apiKey.length > 0;
+  isConfigured(credentials: EffectiveCredentials): boolean {
+    return credentials.geminiApiKey.length > 0;
   }
 
   async generate(request: LLMRequest): Promise<LLMResponse> {
-    if (!this.isConfigured()) {
+    if (!this.isConfigured(request.credentials)) {
       throw new LLMError({
         code: 'not_configured',
         provider: this.id,
         message: 'Gemini no tiene clave API configurada.',
-        hint: 'Anade GEMINI_API_KEY en .env.local y reinicia el servidor.',
+        hint: 'Pega tu clave en Ajustes (o define GEMINI_API_KEY en el servidor).',
       });
     }
 
@@ -74,7 +75,7 @@ export class GeminiProvider implements LLMProvider {
     const data = await postJson<GeminiResponse>({
       provider: this.id,
       url: `${env.gemini.baseUrl}/models/${encodeURIComponent(model)}:generateContent`,
-      headers: { 'x-goog-api-key': env.gemini.apiKey },
+      headers: { 'x-goog-api-key': request.credentials.geminiApiKey },
       body: payload,
       timeoutMs: request.timeoutMs ?? env.llm.timeoutMs,
       signal: request.signal,
@@ -124,13 +125,13 @@ export class GeminiProvider implements LLMProvider {
     };
   }
 
-  async testConnection(): Promise<ProviderHealth> {
+  async testConnection(credentials: EffectiveCredentials): Promise<ProviderHealth> {
     const checkedAt = new Date().toISOString();
-    if (!this.isConfigured()) {
+    if (!this.isConfigured(credentials)) {
       return {
         provider: this.id,
         status: 'not_configured',
-        message: 'Falta GEMINI_API_KEY en las variables de entorno.',
+        message: 'Falta la clave de Gemini: pegala en Ajustes o define GEMINI_API_KEY en el servidor.',
         checkedAt,
       };
     }
@@ -138,6 +139,7 @@ export class GeminiProvider implements LLMProvider {
     const started = Date.now();
     try {
       const response = await this.generate({
+        credentials,
         prompt: 'Responde unicamente con la palabra: ok',
         // 512 y no 16: los modelos con razonamiento consumen parte del
         // presupuesto pensando, y con un tope minusculo la respuesta llega

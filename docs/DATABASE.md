@@ -31,6 +31,7 @@ OK    7 tipos enumerados presentes
 OK    Row Level Security activo en todas las tablas
 OK    23 politicas RLS definidas
 OK    Bucket publico `landing-images` presente
+OK    Columna `profiles.credentials` presente (claves cifradas desde Ajustes)
 OK    Catalogo cargado: 11 tecnologias, 9 plantillas, 17 modelos
 
 La base esta lista.
@@ -171,7 +172,7 @@ historial. Esa función **no cambió el esquema**: no hace falta volver a ejecut
 
 | Tabla | Para qué | Notas |
 | --- | --- | --- |
-| `profiles` | Usuario y preferencias de generación. | Se crea sola con un trigger sobre `auth.users`. |
+| `profiles` | Usuario y preferencias de generación. | Se crea sola con un trigger sobre `auth.users`. La columna `credentials` guarda, **cifradas** (AES-256-GCM), las claves de proveedores que el usuario escribe en Ajustes: texto opaco que solo el servidor puede leer, fuera de `Profile`. Si tu base es anterior a esta función, `npm run db:setup` añade la columna. |
 | `technologies` | Catálogo de stacks con sus instrucciones de prompt. | `owner_id IS NULL` = catálogo común, de solo lectura. |
 | `prompt_templates` | Plantillas internas del Prompt Engine. | Solo lectura desde la aplicación. |
 | `landing_categories` | Catálogo de apoyo para filtros. | |
@@ -272,10 +273,16 @@ Diferencias respecto a producción:
 - La identidad es una cookie sin contraseña: separa espacios de trabajo, **no autentica**.
 - El catálogo se refresca desde el código en cada arranque, conservando lo que haya creado
   el usuario.
+- Las claves de proveedores que el usuario guarda en Ajustes van a `db.json` **cifradas** (campo
+  `credentials`, un texto por usuario). La clave de cifrado **no** está en `db.json`: es
+  `.data/credentials.key` (se crea sola) o `CREDENTIALS_ENCRYPTION_KEY`. Por eso copiar `db.json` no
+  basta para leerlas, y por eso tampoco sirve si la copias a otra máquina sin esa clave.
 - Las imágenes generadas no van a `db.json` (lo reescribiría entero en cada escritura): los bytes
   se guardan en `./.data/images/<id>.<png|jpg|webp>` y solo los metadatos en el JSON. Borrar un
   proyecto borra también sus ficheros. Al pasar de modo local a Supabase, `/api/landing-images/[id]`
   busca primero en disco y después redirige al bucket, así que el HTML no cambia.
 
 `./.data` está en `.gitignore`. Para empezar de cero: para el servidor, borra la carpeta y
-vuelve a arrancar (la base vive también en memoria del proceso mientras corre).
+vuelve a arrancar (la base vive también en memoria del proceso mientras corre). Eso borra también
+`credentials.key` y las claves guardadas desde Ajustes: habrá que escribirlas de nuevo. Si borras solo
+`credentials.key` y dejas `db.json`, las claves guardadas quedan **ilegibles** (Ajustes lo avisa).

@@ -1,5 +1,6 @@
 import 'server-only';
 
+import { resolveCredentials } from '@/lib/credentials';
 import type { DataStore } from '@/lib/data/types';
 import { env } from '@/lib/env';
 import { AppException } from '@/lib/errors';
@@ -8,6 +9,7 @@ import {
   generateImage,
   ImageGenerationError,
   isImageGenerationConfigured,
+  type ImageCredentials,
   type ImageErrorCode,
 } from '@/lib/images/cloudflare';
 import {
@@ -66,6 +68,8 @@ export interface FinalizeImagesInput {
   signal?: AbortSignal;
   /** Solo para las pruebas: espera entre el intento y su reintento. */
   retryDelayMs?: number;
+  /** Credenciales de Cloudflare ya resueltas; si se omiten, se resuelven con `store` y `ownerId`. */
+  credentials?: ImageCredentials;
 }
 
 export interface FinalizeImagesResult {
@@ -117,11 +121,14 @@ async function run(input: FinalizeImagesInput): Promise<FinalizeImagesResult> {
   let generated = 0;
 
   // 1. Cuales se intentan y cuales ni siquiera se piden.
+  // Las credenciales son las del usuario (Ajustes) y, si faltan, las del entorno.
+  const credentials = input.credentials ?? (await resolveCredentials(input.store, input.ownerId));
+
   let queue = pendingSlots.slice(0, env.images.maxPerLanding);
   for (const slot of pendingSlots.slice(queue.length)) fail(slot, 'over_cap');
 
   if (queue.length > 0) {
-    const blocked = gate(input);
+    const blocked = gate(credentials, input);
     if (blocked) {
       for (const slot of queue) fail(slot, blocked);
       queue = [];
@@ -137,7 +144,7 @@ async function run(input: FinalizeImagesInput): Promise<FinalizeImagesResult> {
   const waiting = [...queue];
   const worker = async () => {
     for (let slot = waiting.shift(); slot; slot = waiting.shift()) {
-      const outcome = await generateOne(slot, input);
+      const outcome = await generateOne(slot, input, credentials);
       if (outcome.kind === 'ready') {
         results.set(slot.index, { kind: 'ready', imageId: outcome.imageId });
         generated += 1;
@@ -174,8 +181,8 @@ async function run(input: FinalizeImagesInput): Promise<FinalizeImagesResult> {
 }
 
 /** Motivo por el que no se debe llamar a Cloudflare ahora mismo, o `null` si se puede. */
-function gate(input: FinalizeImagesInput): FailureKey | null {
-  if (!isImageGenerationConfigured()) return 'not_configured';
+function gate(credentials: ImageCredentials, input: FinalizeImagesInput): FailureKey | null {
+  if (!isImageGenerationConfigured(credentials)) return 'not_configured';
   if (quotaBreakerRemainingMs() > 0) return 'quota';
   // La ultima imagen no se pudo guardar: generar otra solo gastaria neuronas.
   if (storageBreaker().remainingMs > 0) return 'storage';
@@ -186,7 +193,7 @@ function gate(input: FinalizeImagesInput): FailureKey | null {
 type Outcome = { kind: 'ready'; imageId: string } | { kind: 'failed'; key: FailureKey };
 
 /** Una imagen: un intento y, solo si el fallo es transitorio y queda tiempo, un reintento. */
-async function generateOne(slot: ImageSlot, input: FinalizeImagesInput): Promise<Outcome> {
+async function generateOne(slot: ImageSlot, input: FinalizeImagesInput, credentials: ImageCredentials): Promise<Outcome> {
   for (let attempt = 1; attempt <= 2; attempt += 1) {
     // Otro marcador pudo agotar la cuota (o descubrir que no se puede guardar) mientras este
     // esperaba su turno: seguir solo gastaria neuronas.
@@ -199,6 +206,7 @@ async function generateOne(slot: ImageSlot, input: FinalizeImagesInput): Promise
     let image;
     try {
       image = await generateImage({
+        credentials,
         prompt: buildFluxPrompt(slot.prompt),
         signal: input.signal,
         timeoutMs: Math.min(env.images.timeoutMs, remaining),

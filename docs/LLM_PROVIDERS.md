@@ -15,12 +15,18 @@ interface LLMProvider {
   readonly models: readonly LLMModelInfo[];
   readonly defaultModel: string;
 
-  isConfigured(): boolean;
-  generate(request: LLMRequest): Promise<LLMResponse>;
-  testConnection(): Promise<ProviderHealth>;
-  listAvailableModels?(): Promise<LLMModelInfo[]>;  // catalogo dinamico (Ollama)
+  isConfigured(credentials: EffectiveCredentials): boolean;
+  generate(request: LLMRequest): Promise<LLMResponse>;      // request.credentials: las del usuario
+  testConnection(credentials: EffectiveCredentials): Promise<ProviderHealth>;
+  listAvailableModels?(credentials: EffectiveCredentials): Promise<LLMModelInfo[]>;  // catalogo dinamico (Ollama)
 }
 ```
+
+`EffectiveCredentials` son las claves **de quien hace la petición**: las que guardó en Ajustes y,
+para lo que no tenga, las del entorno (`src/lib/credentials`). El orquestador las resuelve por
+`ownerId`, así que dos usuarios pueden hablar con el mismo proveedor con claves distintas, y un
+proveedor «configurado» para uno puede no estarlo para otro. Ver
+[`ENVIRONMENT.md`](ENVIRONMENT.md#claves-guardadas-desde-ajustes).
 
 ```
         servicios
@@ -90,7 +96,7 @@ Siempre disponible. No consume cuota ni envía datos a ningún servicio.
 
 ### Google Gemini (`gemini`)
 
-Variable: `GEMINI_API_KEY` — clave gratuita en <https://aistudio.google.com/apikey>.
+Variable: `GEMINI_API_KEY` (o pégala en **Ajustes**) — clave gratuita en <https://aistudio.google.com/apikey>.
 Modelo por defecto: `GEMINI_DEFAULT_MODEL`, recomendado `gemini-flash-latest`.
 
 | Modelo | Contexto | Salida máx. | Nota |
@@ -132,7 +138,7 @@ indistinguible de un fallo si no se mira `finishReason`. Por eso:
 
 ### Groq (`groq`)
 
-Variable: `GROQ_API_KEY` — clave gratuita en <https://console.groq.com/keys>.
+Variable: `GROQ_API_KEY` (o pégala en **Ajustes**) — clave gratuita en <https://console.groq.com/keys>.
 Modelo por defecto: `GROQ_DEFAULT_MODEL`, recomendado `openai/gpt-oss-120b`.
 
 | Modelo | Contexto | Salida máx. | Nota |
@@ -178,8 +184,9 @@ menciona la palabra, añade una instrucción corta de sistema.
 ### Ollama (`ollama`)
 
 Sin variable de entorno obligatoria: corre en local, igual que el modo demo. `OLLAMA_BASE_URL`
-es opcional (por defecto `http://localhost:11434`); `OLLAMA_DEFAULT_MODEL` fija el modelo
-preseleccionado (por defecto `qwen3:8b`).
+es opcional (por defecto `http://localhost:11434`) y, **solo en modo local**, también se puede
+cambiar desde **Ajustes** (en un despliegue compartido sería una puerta de SSRF, así que ahí solo
+vale la variable); `OLLAMA_DEFAULT_MODEL` fija el modelo preseleccionado (por defecto `qwen3:8b`).
 
 Requiere tener [Ollama](https://ollama.com/download) instalado y en ejecución, y haber
 descargado al menos un modelo:
@@ -258,7 +265,8 @@ Authorization: Bearer {TOKEN}
 → { "success": true, "result": { "image": "<base64>" }, "errors": [], "messages": [] }
 ```
 
-Token con permisos *Workers AI – Read* y *Edit* (guía:
+Account ID y token (variables de entorno o **Ajustes**, por usuario y cifrados). Token con permisos
+*Workers AI – Read* y *Edit* (guía:
 <https://developers.cloudflare.com/workers-ai/get-started/rest-api/>). schnell **no tiene
 `width`/`height` ni prompt negativo**: la salida es de tamaño fijo y por eso el prompt lleva siempre el
 sufijo `, no text, no letters, no logos, no watermark`, y la técnica pide al LLM contenedores con
@@ -366,8 +374,8 @@ en silencio, que es el peor fallo posible porque parece un éxito.
 
 ## Degradación elegante
 
-Si se pide un proveedor sin clave configurada, `resolveProvider` devuelve el modo demo y
-marca `fellBackToMock`. La aplicación **no falla**: genera, lo etiqueta como demo y avisa
+Si se pide un proveedor sin clave configurada **para ese usuario** (ni guardada en Ajustes ni
+en el entorno), `resolveProvider` devuelve el modo demo y marca `fellBackToMock`. La aplicación **no falla**: genera, lo etiqueta como demo y avisa
 en la interfaz con un enlace a Ajustes.
 
 ---
@@ -453,7 +461,7 @@ export class OpenAIProvider implements LLMProvider {
   readonly models = OPENAI_MODELS;
   get defaultModel() { return env.openai.defaultModel; }
 
-  isConfigured() { return env.openai.apiKey.length > 0; }
+  isConfigured(credentials: EffectiveCredentials) { return credentials.openaiApiKey.length > 0; }
 
   async generate(request: LLMRequest): Promise<LLMResponse> {
     const limit = maxOutputFor(this.models, model);
@@ -461,7 +469,7 @@ export class OpenAIProvider implements LLMProvider {
     return { text, provider: this.id, model, latencyMs, usage, finishReason, isMock: false };
   }
 
-  async testConnection(): Promise<ProviderHealth> { /* … */ }
+  async testConnection(credentials: EffectiveCredentials): Promise<ProviderHealth> { /* … */ }
 }
 ```
 
@@ -471,8 +479,15 @@ errores HTTP a `LLMError`.
 **3. Registra el id** en `ProviderId` y `PROVIDER_IDS` (`src/types/llm.ts`), la clase en
 `src/lib/llm/registry.ts` y la lectura de la variable en `src/lib/env.ts`.
 
-La pantalla de Ajustes, el selector del Prompt Studio, el esquema de validación y el
-catálogo de la base de datos se actualizan solos. Regenera el SQL con `npm run seed:sql`.
+**4. Si necesita clave, hazla editable desde Ajustes:** añade el campo (`openaiApiKey`) a
+`EffectiveCredentials` (`src/types/llm.ts`), a `envCredentials()` (`src/lib/env.ts`), a
+`CREDENTIAL_FIELDS`, `LABELS` y `merge` (`src/lib/credentials/index.ts`) y a `saveCredentialsSchema`
+(`src/lib/validation/schemas.ts`), y una casilla en `PROVIDER_FIELDS` de
+`src/features/settings/provider-settings.tsx`. `npm run verify:credentials` comprueba que se usa
+la clave del usuario y no la del entorno.
+
+El selector del Prompt Studio, el esquema de validación del proveedor y el catálogo de la base de
+datos se actualizan solos. Regenera el SQL con `npm run seed:sql`.
 
 Para un proveedor local sin clave, `src/lib/llm/ollama-provider.ts` es el ejemplo real:
 `baseUrl` apunta a `http://localhost:11434` por defecto y `envKey` es `null`, igual que hace
@@ -500,13 +515,18 @@ generación queda **atribuida al proveedor y no al modo demo**. Detalle en
 
 ## Seguridad
 
-- Las claves se leen solo en `src/lib/env.ts`, marcado como `server-only`: si un componente
-  de cliente lo importa, el build falla.
+- Las claves del servidor se leen solo en `src/lib/env.ts`, marcado como `server-only`: si un
+  componente de cliente lo importa, el build falla. Las que cada usuario guarda en Ajustes se
+  resuelven en `src/lib/credentials` (también `server-only`).
 - Las llamadas salen exclusivamente desde route handlers.
 - `/api/providers` devuelve un resumen sin secretos: solo si cada proveedor está
   configurado, su modelo por defecto y su catálogo de modelos.
 - `/api/providers/test` hace una petición real mínima y devuelve estado, mensaje y latencia.
   Nunca la clave.
-- Las claves no se guardan en la base de datos ni aparecen en los registros. Comprobado
-  también sobre el bundle compilado: `grep` sobre `.next/static` no encuentra ninguna
-  referencia a las variables de clave.
+- Las claves del servidor no se guardan en la base de datos ni aparecen en los registros. Las
+  que el usuario escribe en Ajustes **sí** se guardan, pero cifradas (AES-256-GCM) y por usuario:
+  en la base de datos solo hay texto cifrado, la clave maestra está fuera de ella y nunca vuelven
+  al navegador. Comprobado también sobre el bundle compilado: ninguna clave del servidor aparece
+  en `.next/static`.
+- La URL de Ollama solo se acepta desde Ajustes en modo local (en modo compartido sería una
+  puerta de SSRF); las de Gemini, Groq y Cloudflare están fijas en el código.

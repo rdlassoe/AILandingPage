@@ -105,7 +105,7 @@ function hintForStatus(status: number, provider: ErrorSource, retryAfter?: strin
             ? 'CLOUDFLARE_API_TOKEN'
             : null;
     return envVar
-      ? `Revisa ${envVar} en tu archivo .env.local.`
+      ? `Revisa la clave en Ajustes (o ${envVar} en el servidor, si no hay una guardada ahi).`
       : 'El servidor rechazo la peticion por autenticacion.';
   }
   if (status === 429) {

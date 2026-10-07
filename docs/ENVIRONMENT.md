@@ -4,7 +4,8 @@ Copia `.env.example` como `.env.local`. **Todas las variables son opcionales**: 
 la aplicación arranca con el almacén local y el modo demo.
 
 > Next.js lee las variables al arrancar. Después de cambiar `.env.local` hay que **reiniciar
-> el servidor**; no se recargan en caliente.
+> el servidor**; no se recargan en caliente. Las claves de proveedores que escribas en **Ajustes**
+> no lo necesitan: ver [«Claves guardadas desde Ajustes»](#claves-guardadas-desde-ajustes).
 
 ---
 
@@ -55,6 +56,54 @@ Ambos nombres están cubiertos por `.env*.local` en `.gitignore`. **Bórralo al 
 queda, tu servidor habitual también arrancará sin Supabase. Pasar las variables vacías por la
 línea de comandos no funcionó de forma fiable al lanzar el servidor desde un arrancador de
 procesos; esta vía sí. Más contexto en [`DEVELOPMENT.md`](DEVELOPMENT.md#contra-un-proveedor-real).
+
+---
+
+## Claves guardadas desde Ajustes
+
+Las claves de los proveedores (Gemini, Groq), la URL de Ollama y las credenciales de Cloudflare
+(Account ID y token) también se pueden escribir en **Ajustes**, sin editar `.env.local` ni reiniciar.
+
+| | |
+| --- | --- |
+| Alcance | **Por usuario.** Cada cuenta guarda las suyas; una cuenta no ve ni usa las de otra. |
+| Prioridad | La de Ajustes **gana** a la de las variables de entorno; si falta, se usa la del entorno. Con ninguna, el modo demo. |
+| Almacenamiento | Cifradas con **AES-256-GCM** (IV nuevo por mensaje, el id del usuario como dato autenticado). Modo local: `.data/db.json`; Supabase: `profiles.credentials`. |
+| Clave de cifrado | `CREDENTIALS_ENCRYPTION_KEY` o, si no está, `.data/credentials.key` (se crea sola, 32 bytes aleatorios, en `.gitignore`). Vive **fuera** de donde van las claves cifradas: una copia de `db.json` no basta para leerlas. |
+| Hacia el cliente | Nunca. La interfaz solo recibe de dónde sale cada valor (Ajustes, entorno, ninguno) y los cuatro últimos caracteres. No existe ninguna operación que devuelva una clave. |
+
+| Variable | Ámbito | Por defecto | Para qué |
+| --- | --- | --- | --- |
+| `CREDENTIALS_ENCRYPTION_KEY` | Solo servidor | vacío | Clave maestra para cifrar las claves guardadas desde Ajustes. Opcional: sin ella se genera `.data/credentials.key`. **Obligatoria** donde no se pueda escribir en disco (despliegues serverless). Si la cambias, las claves guardadas dejan de poder leerse y hay que volver a escribirlas. |
+
+Cómo se usa:
+
+1. Abre **Ajustes**. Cada proveedor tiene su casilla (Gemini y Groq: clave API; Ollama: URL del
+   servidor; imágenes: Account ID y token de Cloudflare). Las claves se escriben ocultas y sin
+   autocompletado.
+2. Escribe el valor y pulsa **Guardar**. Se valida antes (sin espacios ni saltos de línea, Account ID de
+   32 hex, URL de Ollama válida); si un valor no vale, no se guarda ninguno de los que mandaste.
+3. Tras guardar, la casilla se vacía y muestra **de dónde sale** el valor («guardada en Ajustes», «del
+   servidor (.env)» o «sin configurar») y sus cuatro últimos caracteres.
+4. Pulsa **Probar conexión** para comprobarla: se prueba con lo que usaría una generación tuya (tu clave
+   si la guardaste; si no, la del servidor).
+5. Para quitarla, usa la papelera de la casilla: se vuelve a usar la del servidor, si hay. Para escribir
+   una nueva sobre una guardada, basta con escribirla y guardar.
+
+Límites y cosas que conviene saber:
+
+- **La URL de Ollama solo se puede cambiar en modo local.** El servidor hace esa petición: en un
+  despliegue compartido (Supabase), dejar que un usuario elija la URL permitiría que el servidor
+  hable con direcciones internas (SSRF). Ahí se define con `OLLAMA_BASE_URL`. Las URLs de
+  Gemini, Groq y Cloudflare están fijas en el código y no se pueden cambiar desde Ajustes.
+- **Con Supabase hay que ejecutar `npm run db:setup`** para añadir la columna
+  `profiles.credentials`. Hasta entonces la aplicación sigue funcionando con las claves del
+  entorno y Ajustes explica que no se puede guardar. `npm run db:check` lo avisa.
+- Si se pierde `.data/credentials.key` (o cambia `CREDENTIALS_ENCRYPTION_KEY`), las claves
+  guardadas no se pueden descifrar: la aplicación lo dice en Ajustes, usa las del entorno y basta
+  con volver a escribirlas.
+- Una clave guardada en Ajustes **no** se comparte: el limitador de uso y la cuota de cada
+  proveedor siguen siendo por usuario y por cuenta del proveedor, respectivamente.
 
 ---
 
@@ -119,8 +168,9 @@ lugar de bajarlo.
 Opcional. La usa la técnica de diseño «Generación de imágenes»: el LLM deja marcadores
 `<img data-ai-image="…">` y el servidor los rellena con FLUX. **No es un proveedor de texto**: no
 se elige en el Prompt Studio ni compite con Gemini o Groq, y funciona con cualquiera de ellos (también
-con el modo demo). Sin las dos primeras variables, la técnica deja los marcadores con la descripción
-de cada imagen y el Prompt Studio lo avisa. Detalle, límites y errores en
+con el modo demo). Sin las dos primeras credenciales —ni en variables de entorno ni guardadas en
+**Ajustes**—, la técnica deja los marcadores con la descripción de cada imagen y el Prompt Studio lo
+avisa. La URL de la API y el modelo son solo del servidor: no se cambian desde Ajustes. Detalle, límites y errores en
 [`LLM_PROVIDERS.md`](LLM_PROVIDERS.md#generación-de-imágenes-cloudflare-workers-ai).
 
 | Variable | Ámbito | Por defecto | Para qué |
@@ -173,7 +223,8 @@ export const env = {
   groq:     { apiKey, defaultModel, baseUrl },
   ollama:   { baseUrl, defaultModel },
   llm:      { defaultProvider, timeoutMs },
-  cloudflare:{ accountId, apiToken, model, baseUrl, enabled },
+  cloudflare:{ accountId, apiToken, model, baseUrl, enabled },   // del entorno: respaldo de lo guardado en Ajustes
+  credentials:{ encryptionKey },
   images:   { maxPerLanding, steps, timeoutMs, stepBudgetMs, ratePerHour, quotaCooldownMs, storageCooldownMs, maxBytes },
   rateLimit:{ maxRequests, windowMs, cooldownMs },
 } as const;
@@ -185,7 +236,9 @@ declararse **antes** de `export const env`. Una `const` posterior compila y pasa
 arrancar sin la variable da `Cannot access 'x' before initialization` —lo destapó `npm run build`—.
 `npm run verify:images` lo comprueba arrancando `env.ts` con y sin variables.
 
-Lo único que viaja al cliente es `getRuntimeConfigSummary()`, que no contiene secretos:
+Lo único que viaja al cliente es `getRuntimeConfigSummary(credentials)`, que no contiene secretos. Recibe
+las credenciales **efectivas del usuario** (Ajustes + entorno) y no solo el entorno: para quien guardó su
+propia clave, el proveedor aparece como configurado aunque `.env.local` esté vacío:
 
 ```ts
 {
@@ -203,11 +256,16 @@ Lo único que viaja al cliente es `getRuntimeConfigSummary()`, que no contiene s
 
 ## Seguridad
 
-- `.env`, `.env.local` y variantes están en `.gitignore`. **Nunca** se suben claves.
+- `.env`, `.env.local` y variantes, y `.data/` (con `credentials.key`), están en `.gitignore`.
+  **Nunca** se suben claves.
 - Solo las variables con prefijo `NEXT_PUBLIC_` llegan al navegador. Ninguna clave de
-  proveedor lo lleva.
-- Las claves no se guardan en la base de datos ni aparecen en los registros: `generations`
-  almacena proveedor, modelo, estado, latencia y tokens, nunca credenciales.
+  proveedor lo lleva. Se comprobó sobre el bundle compilado: ninguna de las claves del servidor
+  aparece en `.next/static`.
+- Las claves **escritas en Ajustes** sí se guardan, pero **cifradas** (ver «Claves guardadas
+  desde Ajustes») y por usuario, y no vuelven al navegador ni aparecen en los registros:
+  `generations` almacena proveedor, modelo, estado, latencia y tokens, nunca credenciales. Un
+  valor mal formado se rechaza antes de guardarlo (sin espacios ni saltos de línea: acabaría en
+  una cabecera HTTP) y el mensaje de error nunca repite lo recibido.
 - Si crees que una clave se ha filtrado, revócala en el panel del proveedor y genera otra:
   rotarla es más rápido que auditar dónde ha quedado.
 
@@ -217,6 +275,12 @@ Lo único que viaja al cliente es `getRuntimeConfigSummary()`, que no contiene s
 
 En Vercel, Netlify o equivalente, define las mismas variables en el panel del proyecto.
 Marca como *secret* todas menos las `NEXT_PUBLIC_*`.
+
+**Claves de proveedores guardadas desde Ajustes.** En un despliegue sin disco escribible
+(Vercel, Netlify) no se puede crear `.data/credentials.key`: define `CREDENTIALS_ENCRYPTION_KEY` con 32 o más
+caracteres aleatorios, marcada como *secret*, o Ajustes avisará de que no se pueden guardar claves. Con
+Supabase, ejecuta antes `npm run db:setup` (añade `profiles.credentials`). Si cambias la clave
+de cifrado, las claves ya guardadas dejan de poder leerse y cada usuario debe escribirlas de nuevo.
 
 Las rutas de generación declaran `maxDuration = 120`. Si tu plan limita la duración de las
 funciones por debajo de eso, baja `LLM_TIMEOUT_MS` en consecuencia para que el error que vea

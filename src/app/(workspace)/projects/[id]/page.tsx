@@ -7,6 +7,7 @@ import { PageBody, PageHeader } from '@/components/layout/page-header';
 import { DeleteProjectButton, ProjectPhases } from '@/features/projects/project-phases';
 import { Badge, DefinitionList, EmptyState, LinkButton, Panel, PanelBody, PanelHeader } from '@/components/ui';
 import { requireContext } from '@/lib/auth/session';
+import { getUserCredentials } from '@/lib/credentials/server';
 import { env } from '@/lib/env';
 import { getProvider } from '@/lib/llm/registry';
 import { formatDateTime, formatRelative } from '@/lib/utils';
@@ -38,7 +39,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   ]);
 
   const provider = getProvider(env.llm.defaultProvider);
-  const usingMock = !provider.isConfigured();
+  const usingMock = !provider.isConfigured(await getUserCredentials(user.id));
 
   // El asistente ya no pregunta por estilo ni restricciones: solo se muestran estos
   // paneles en proyectos antiguos que si los tienen (sin valores por defecto fantasma).

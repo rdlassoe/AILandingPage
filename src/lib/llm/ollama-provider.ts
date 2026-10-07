@@ -6,6 +6,7 @@ import { env } from '@/lib/env';
 import {
   DEFAULT_GENERATION_CONFIG,
   LLMError,
+  type EffectiveCredentials,
   type FinishReason,
   type LLMModelInfo,
   type LLMProvider,
@@ -84,7 +85,7 @@ export class OllamaProvider implements LLMProvider {
     try {
       data = await postJson<OllamaChatResponse>({
         provider: this.id,
-        url: `${env.ollama.baseUrl}/v1/chat/completions`,
+        url: `${request.credentials.ollamaBaseUrl}/v1/chat/completions`,
         body: {
           model,
           messages,
@@ -98,7 +99,7 @@ export class OllamaProvider implements LLMProvider {
         signal: request.signal,
       });
     } catch (error) {
-      throw translateConnectionError(error, model);
+      throw translateConnectionError(error, model, request.credentials.ollamaBaseUrl);
     }
 
     const choice = data.choices?.[0];
@@ -135,11 +136,12 @@ export class OllamaProvider implements LLMProvider {
     };
   }
 
-  async testConnection(): Promise<ProviderHealth> {
+  async testConnection(credentials: EffectiveCredentials): Promise<ProviderHealth> {
     const checkedAt = new Date().toISOString();
     const started = Date.now();
     try {
       const response = await this.generate({
+        credentials,
         prompt: 'Responde unicamente con la palabra: ok',
         // 512 y no un valor menor: los modelos "thinking" como qwen3 gastan
         // parte del presupuesto pensando (~200 tokens medidos para "ok") y
@@ -173,12 +175,12 @@ export class OllamaProvider implements LLMProvider {
    * nativa de Ollama, no la compatible con OpenAI) y, si Ollama no responde,
    * se deja que el llamador use el catalogo estatico como referencia.
    */
-  async listAvailableModels(): Promise<LLMModelInfo[]> {
+  async listAvailableModels(credentials: EffectiveCredentials): Promise<LLMModelInfo[]> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 3_000);
 
     try {
-      const response = await fetch(`${env.ollama.baseUrl}/api/tags`, {
+      const response = await fetch(`${credentials.ollamaBaseUrl}/api/tags`, {
         signal: controller.signal,
         cache: 'no-store',
       });
@@ -218,12 +220,12 @@ export class OllamaProvider implements LLMProvider {
  * "Ollama no esta arrancado". Se afina aqui en lugar de en `http.ts`, que es
  * compartido con proveedores en la nube donde ese diagnostico no aplica.
  */
-function translateConnectionError(error: unknown, model: string): LLMError {
+function translateConnectionError(error: unknown, model: string, baseUrl: string): LLMError {
   if (error instanceof LLMError && error.code === 'network') {
     return new LLMError({
       code: 'network',
       provider: 'ollama',
-      message: `No se pudo contactar con Ollama en ${env.ollama.baseUrl}.`,
+      message: `No se pudo contactar con Ollama en ${baseUrl}.`,
       hint: `Comprueba que Ollama esta en ejecucion y que has descargado el modelo con "ollama pull ${model}".`,
       cause: error,
     });

@@ -200,6 +200,23 @@ export const testProviderSchema = z.object({
   providerId: providerIdSchema,
 });
 
+/**
+ * Cambio parcial de credenciales. Aqui solo se acota el tamano y se rechaza todo campo
+ * desconocido; el formato de cada valor (sin espacios, 32 hex del Account ID, URL de Ollama
+ * solo en modo local...) lo valida `normalizeCredentialValue`, que es la unica fuente de esas
+ * reglas. Los mensajes de error nunca incluyen el valor recibido.
+ */
+const credentialValue = z.string().max(500, 'El valor es demasiado largo.').nullable().optional();
+export const saveCredentialsSchema = z
+  .object({
+    geminiApiKey: credentialValue,
+    groqApiKey: credentialValue,
+    ollamaBaseUrl: credentialValue,
+    cloudflareAccountId: credentialValue,
+    cloudflareApiToken: credentialValue,
+  })
+  .strict();
+
 /** Convierte los errores de Zod en un mensaje legible para el usuario. */
 export function formatZodError(error: z.ZodError): string {
   const first = error.issues[0];

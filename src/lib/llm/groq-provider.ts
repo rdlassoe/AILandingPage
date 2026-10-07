@@ -6,6 +6,7 @@ import { env } from '@/lib/env';
 import {
   DEFAULT_GENERATION_CONFIG,
   LLMError,
+  type EffectiveCredentials,
   type FinishReason,
   type LLMProvider,
   type LLMRequest,
@@ -37,17 +38,17 @@ export class GroqProvider implements LLMProvider {
     return env.groq.defaultModel || 'openai/gpt-oss-120b';
   }
 
-  isConfigured(): boolean {
-    return env.groq.apiKey.length > 0;
+  isConfigured(credentials: EffectiveCredentials): boolean {
+    return credentials.groqApiKey.length > 0;
   }
 
   async generate(request: LLMRequest): Promise<LLMResponse> {
-    if (!this.isConfigured()) {
+    if (!this.isConfigured(request.credentials)) {
       throw new LLMError({
         code: 'not_configured',
         provider: this.id,
         message: 'Groq no tiene clave API configurada.',
-        hint: 'Anade GROQ_API_KEY en .env.local y reinicia el servidor.',
+        hint: 'Pega tu clave en Ajustes (o define GROQ_API_KEY en el servidor).',
       });
     }
 
@@ -71,7 +72,7 @@ export class GroqProvider implements LLMProvider {
     const data = await postJson<GroqResponse>({
       provider: this.id,
       url: `${env.groq.baseUrl}/chat/completions`,
-      headers: { authorization: `Bearer ${env.groq.apiKey}` },
+      headers: { authorization: `Bearer ${request.credentials.groqApiKey}` },
       body: {
         model,
         messages,
@@ -111,13 +112,13 @@ export class GroqProvider implements LLMProvider {
     };
   }
 
-  async testConnection(): Promise<ProviderHealth> {
+  async testConnection(credentials: EffectiveCredentials): Promise<ProviderHealth> {
     const checkedAt = new Date().toISOString();
-    if (!this.isConfigured()) {
+    if (!this.isConfigured(credentials)) {
       return {
         provider: this.id,
         status: 'not_configured',
-        message: 'Falta GROQ_API_KEY en las variables de entorno.',
+        message: 'Falta la clave de Groq: pegala en Ajustes o define GROQ_API_KEY en el servidor.',
         checkedAt,
       };
     }
@@ -125,6 +126,7 @@ export class GroqProvider implements LLMProvider {
     const started = Date.now();
     try {
       const response = await this.generate({
+        credentials,
         prompt: 'Responde unicamente con la palabra: ok',
         config: { maxOutputTokens: 512, temperature: 0 },
         timeoutMs: 15_000,

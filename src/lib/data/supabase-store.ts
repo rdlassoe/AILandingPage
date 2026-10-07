@@ -134,6 +134,37 @@ export class SupabaseDataStore implements DataStore {
     return toProfile(data as Row);
   }
 
+  /**
+   * Credenciales cifradas del usuario, en `profiles.credentials`. Se lee y se escribe con una
+   * consulta propia y no a traves de `toProfile`: asi el texto cifrado no puede colarse en un
+   * `Profile` que acabe en el cliente. RLS ya limita `profiles` a la fila del propio usuario.
+   *
+   * Si la columna no existe (la base se creo antes de esta funcion) no es un fallo del usuario:
+   * hay que ejecutar `npm run db:setup`, y el mensaje lo dice.
+   */
+  async getCredentialsBlob(userId: string): Promise<string | null> {
+    const { data, error } = await this.db.from('profiles').select('credentials').eq('id', userId).maybeSingle();
+    if (error) this.failCredentials(error, 'leer tus credenciales');
+    const value = (data as Row | null)?.credentials;
+    return typeof value === 'string' && value.length > 0 ? value : null;
+  }
+
+  async saveCredentialsBlob(userId: string, blob: string | null): Promise<void> {
+    const { error } = await this.db.from('profiles').update({ credentials: blob }).eq('id', userId);
+    if (error) this.failCredentials(error, 'guardar tus credenciales');
+  }
+
+  private failCredentials(error: PostgrestError, what: string): never {
+    const missingColumn = error.code === '42703' || error.code === 'PGRST204' || /credentials/i.test(error.message);
+    throw new AppException({
+      code: 'storage_error',
+      message: `No pudimos ${what}.`,
+      hint: missingColumn ? 'A tu base de datos le falta la columna profiles.credentials: ejecuta npm run db:setup.' : undefined,
+      detail: `${error.code}: ${error.message}`,
+      retryable: !missingColumn,
+    });
+  }
+
   /* ----------------------------------------------------------- Tecnologias */
 
   async listTechnologies(userId: string | null): Promise<Technology[]> {

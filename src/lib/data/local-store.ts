@@ -83,6 +83,12 @@ interface LocalDb {
   reviews: GenerationReview[];
   /** Solo metadatos: los bytes van a `.data/images/<id>.<ext>`, no a este JSON. */
   landingImages: LandingImage[];
+  /**
+   * Credenciales de proveedores por usuario, CIFRADAS (AES-256-GCM). La clave esta en
+   * `.data/credentials.key` o en `CREDENTIALS_ENCRYPTION_KEY`, nunca en este archivo: una copia
+   * de `db.json` no basta para leerlas.
+   */
+  credentials: Record<string, string>;
 }
 
 const DB_DIR = path.join(process.cwd(), '.data');
@@ -133,6 +139,7 @@ function emptyDb(): LocalDb {
     landingVersions: [],
     reviews: [],
     landingImages: [],
+    credentials: {},
   };
 }
 
@@ -234,6 +241,20 @@ export class LocalDataStore implements DataStore {
     Object.assign(profile, patch, { updatedAt: nowIso() });
     await persist(db);
     return profile;
+  }
+
+  async getCredentialsBlob(userId: string): Promise<string | null> {
+    const db = await loadDb();
+    return db.credentials?.[userId] ?? null;
+  }
+
+  async saveCredentialsBlob(userId: string, blob: string | null): Promise<void> {
+    const db = await loadDb();
+    const credentials = { ...(db.credentials ?? {}) };
+    if (blob === null) delete credentials[userId];
+    else credentials[userId] = blob;
+    db.credentials = credentials;
+    await persist(db);
   }
 
   /* ----------------------------------------------------------- Tecnologias */

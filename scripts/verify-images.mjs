@@ -334,10 +334,17 @@ const finalize = (html, overrides = {}) =>
 
 {
   resetImageLimits();
-  env.cloudflare.enabled = false;
+  // "Sin credenciales": ya no hay un interruptor global, el estado sale de las credenciales efectivas
+  // (Ajustes + entorno). Aqui no hay Ajustes (el almacen simulado no tiene credenciales), asi que se
+  // vacian las del entorno y se restauran despues.
+  const savedAccount = env.cloudflare.accountId;
+  const savedToken = env.cloudflare.apiToken;
+  env.cloudflare.accountId = '';
+  env.cloudflare.apiToken = '';
   const before = stub.calls.length;
   const out = await finalize(doc([slot('a'), slot('b')].join('\n')));
-  env.cloudflare.enabled = true;
+  env.cloudflare.accountId = savedAccount;
+  env.cloudflare.apiToken = savedToken;
   check(
     stub.calls.length === before && out.report.pending === 2 && out.report.generated === 0 && out.warnings.some((w) => w.includes('no esta configurado')),
     'Sin credenciales: degrada con aviso claro y sin tocar la red',

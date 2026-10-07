@@ -105,6 +105,11 @@ create table if not exists profiles (
   updated_at         timestamptz not null default now()
 );
 
+-- Credenciales de proveedores (Gemini, Groq, Cloudflare...) que cada usuario guarda desde Ajustes.
+-- Texto CIFRADO (AES-256-GCM, ver src/lib/credentials): la base de datos nunca ve una clave en claro
+-- y la clave de cifrado no esta aqui. Solo la lee y escribe el propio usuario (RLS de profiles).
+alter table profiles add column if not exists credentials text;
+
 drop trigger if exists profiles_updated_at on profiles;
 create trigger profiles_updated_at before update on profiles
   for each row execute function set_updated_at();

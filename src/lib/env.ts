@@ -1,7 +1,7 @@
 import 'server-only';
 
 import { normalizeSupabaseUrl } from '@/lib/supabase/url';
-import type { ProviderId } from '@/types/llm';
+import type { EffectiveCredentials, ProviderId } from '@/types/llm';
 
 /**
  * Lectura centralizada de variables de entorno.
@@ -56,7 +56,18 @@ export const env = {
     // Sin clave: corre en local. `baseUrl` es la unica variable, con el
     // puerto por defecto de Ollama si no se fija otra cosa.
     baseUrl: str(process.env.OLLAMA_BASE_URL, 'http://localhost:11434'),
+    /** true si `OLLAMA_BASE_URL` esta definida: la URL por defecto no cuenta como configuracion. */
+    explicit: str(process.env.OLLAMA_BASE_URL).length > 0,
     defaultModel: str(process.env.OLLAMA_DEFAULT_MODEL, 'qwen3:8b'),
+  },
+
+  credentials: {
+    /**
+     * Clave maestra con la que se cifran las credenciales guardadas desde Ajustes
+     * (opcional). Sin ella, se genera una clave local en `.data/credentials.key`.
+     * Ver `src/lib/credentials/crypto.ts`.
+     */
+    encryptionKey: str(process.env.CREDENTIALS_ENCRYPTION_KEY),
   },
 
   llm: {
@@ -135,6 +146,20 @@ function normalizeProvider(raw: string | undefined): ProviderId {
   return 'mock';
 }
 
+/**
+ * Credenciales que vienen SOLO del entorno. Es el respaldo de las que cada usuario
+ * guarda en Ajustes (`resolveCredentials`) y lo que se usa donde no hay usuario.
+ */
+export function envCredentials(): EffectiveCredentials {
+  return {
+    geminiApiKey: env.gemini.apiKey,
+    groqApiKey: env.groq.apiKey,
+    ollamaBaseUrl: env.ollama.baseUrl,
+    cloudflareAccountId: env.cloudflare.accountId,
+    cloudflareApiToken: env.cloudflare.apiToken,
+  };
+}
+
 /** Resumen seguro (sin secretos) que puede viajar al cliente. */
 export interface RuntimeConfigSummary {
   supabaseEnabled: boolean;
@@ -147,15 +172,19 @@ export interface RuntimeConfigSummary {
   rateLimit: { maxRequests: number; windowMs: number; cooldownMs: number };
 }
 
-export function getRuntimeConfigSummary(): RuntimeConfigSummary {
+/**
+ * `credentials` son las efectivas del usuario (Ajustes + entorno). Sin ellas, solo cuenta
+ * el entorno: la pantalla de un usuario que guardo su propia clave debe verla como configurada.
+ */
+export function getRuntimeConfigSummary(credentials: EffectiveCredentials = envCredentials()): RuntimeConfigSummary {
   return {
     supabaseEnabled: env.supabase.enabled,
     storageMode: env.supabase.enabled ? 'supabase' : 'local',
     defaultProvider: env.llm.defaultProvider,
     providersConfigured: {
       mock: true,
-      gemini: env.gemini.apiKey.length > 0,
-      groq: env.groq.apiKey.length > 0,
+      gemini: credentials.geminiApiKey.length > 0,
+      groq: credentials.groqApiKey.length > 0,
       // Sin clave: se considera "configurado" porque no hay credencial que
       // pedir. La disponibilidad real (si Ollama esta corriendo) se ve al
       // probar la conexion, igual que con cualquier otro proveedor.
@@ -163,7 +192,7 @@ export function getRuntimeConfigSummary(): RuntimeConfigSummary {
     },
     imageGeneration: {
       provider: 'cloudflare',
-      configured: env.cloudflare.enabled,
+      configured: credentials.cloudflareAccountId.length > 0 && credentials.cloudflareApiToken.length > 0,
       model: env.cloudflare.model,
       maxPerLanding: env.images.maxPerLanding,
     },

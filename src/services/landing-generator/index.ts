@@ -5,6 +5,7 @@ import { env } from '@/lib/env';
 import { AppException, forbidden, notFound } from '@/lib/errors';
 import { truncate } from '@/lib/utils';
 import { resolveProvider } from '@/lib/llm/registry';
+import { resolveCredentials } from '@/lib/credentials';
 import { finalizeLandingImages, IMAGE_MARKER } from '@/services/image-generator';
 import { runLLM } from '@/services/llm-orchestrator';
 import { validateLandingOutput } from '@/services/output-validator';
@@ -101,7 +102,8 @@ export async function buildPromptForProject(
   // tambien se trata como demo. Evita mandarle al Mock Provider un prompt de
   // "genera un string aleatorio" o "reescribe este prompt": Mock interpreta
   // el texto para decidir que responder, y esas formas no las reconoce.
-  const { provider } = resolveProvider(options.providerId);
+  const credentials = await resolveCredentials(ctx.store, ctx.ownerId);
+  const { provider } = resolveProvider(options.providerId, credentials);
   const usesRealLLM = provider.id !== 'mock';
 
   // `designTechniques` llega del cliente como cadenas libres: `getTechniques`
@@ -551,7 +553,7 @@ export async function generateVariation(
   // string aleatorio (con la tecnica real si el proveedor esta configurado,
   // o su equivalente PRNG en modo demo) que sustituye al del encargo original.
   const useNewSeed = input.strategy === 'same-content-new-seed' || input.strategy === 'experimental';
-  const { provider } = resolveProvider(input.providerId);
+  const { provider } = resolveProvider(input.providerId, await resolveCredentials(ctx.store, ctx.ownerId));
   const freshSeed = useNewSeed
     ? provider.id !== 'mock'
       ? await generateRandomSeedWithTracking(ctx, project, { providerId: input.providerId, model: input.model })

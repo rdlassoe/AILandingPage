@@ -5,7 +5,7 @@ import { GroqProvider } from './groq-provider';
 import { MockProvider } from './mock-provider';
 import { OllamaProvider } from './ollama-provider';
 import { env } from '@/lib/env';
-import { PROVIDER_IDS, type LLMProvider, type ProviderId } from '@/types/llm';
+import { PROVIDER_IDS, type EffectiveCredentials, type LLMProvider, type ProviderId } from '@/types/llm';
 
 /**
  * Registro de proveedores.
@@ -32,8 +32,14 @@ export function listProviders(): LLMProvider[] {
   return PROVIDER_IDS.map((id) => registry[id]);
 }
 
-/** Proveedor efectivo: el pedido, si esta configurado; si no, el modo demo. */
-export function resolveProvider(requested?: ProviderId | null): {
+/**
+ * Proveedor efectivo: el pedido, si esta configurado CON LAS CREDENCIALES DE ESTE USUARIO
+ * (las de Ajustes y, si faltan, las del entorno); si no, el modo demo.
+ */
+export function resolveProvider(
+  requested: ProviderId | null | undefined,
+  credentials: EffectiveCredentials,
+): {
   provider: LLMProvider;
   fellBackToMock: boolean;
   requested: ProviderId;
@@ -41,7 +47,7 @@ export function resolveProvider(requested?: ProviderId | null): {
   const wanted: ProviderId = requested ?? env.llm.defaultProvider;
   const provider = registry[wanted];
 
-  if (provider.isConfigured()) {
+  if (provider.isConfigured(credentials)) {
     return { provider, fellBackToMock: false, requested: wanted };
   }
 
@@ -60,11 +66,11 @@ export interface ProviderStatus {
  * pagina del area privada y no puede pagar esa latencia solo para pintar el
  * indicador de proveedor de la barra lateral.
  */
-export function listProviderStatuses(): ProviderStatus[] {
+export function listProviderStatuses(credentials: EffectiveCredentials): ProviderStatus[] {
   return listProviders().map((provider) => ({
     id: provider.id,
     label: provider.label,
-    configured: provider.isConfigured(),
+    configured: provider.isConfigured(credentials),
   }));
 }
 
@@ -86,16 +92,16 @@ export interface ProviderSummary {
  * `listAvailableModels()` consulta el servidor real. Para el resto es
  * inmediato, ya que no implementan ese metodo opcional.
  */
-export async function getProviderSummaries(): Promise<ProviderSummary[]> {
+export async function getProviderSummaries(credentials: EffectiveCredentials): Promise<ProviderSummary[]> {
   return Promise.all(
     listProviders().map(async (provider) => {
-      const models = (await provider.listAvailableModels?.()) ?? provider.models;
+      const models = (await provider.listAvailableModels?.(credentials)) ?? provider.models;
       return {
         id: provider.id,
         label: provider.label,
         docsUrl: provider.docsUrl,
         envKey: provider.envKey,
-        configured: provider.isConfigured(),
+        configured: provider.isConfigured(credentials),
         isDefault: provider.id === env.llm.defaultProvider,
         defaultModel: provider.defaultModel,
         models: models.map((model) => ({

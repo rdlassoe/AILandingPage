@@ -41,7 +41,8 @@ Groq ni Ollama.
 | **Seed String Engine** | Si la técnica «Cadenas Semilla» está elegida, genera un string aleatorio en cada ejecución (técnica *String Seed of Thought*); no hay catálogo, lo manipula el propio modelo para derivar una dirección creativa. |
 | **Prompt Engine** | Ensambla un prompt de hasta 17 secciones canónicas de forma determinista, con únicamente las técnicas de diseño elegidas (también cuando lo reescribe un LLM). |
 | **Prompt Composer** | Combina varias tecnologías, detecta conflictos y resuelve prioridades. |
-| **LLM Orchestrator** | Punto único de contacto con los modelos: proveedor, modelo, timeout, reintento único, límite de uso. |
+| **LLM Orchestrator** | Punto único de contacto con los modelos: proveedor, modelo, credenciales del usuario, timeout, reintento único, límite de uso. |
+| **Ajustes** | Claves API de los proveedores (Gemini, Groq, URL de Ollama) y credenciales de Cloudflare para las imágenes: por usuario, cifradas, con prueba de conexión. También las preferencias de generación y los límites de uso. |
 | **Output Validator** | Normaliza y valida la respuesta antes de mostrarla. No se confía en el modelo. |
 | **Image Generator** | Con la técnica «Generación de imágenes», rellena los marcadores `<img data-ai-image>` del HTML con FLUX (Cloudflare Workers AI). Las imágenes se guardan aparte y el HTML solo lleva una URL corta; lo que falle queda como marcador y se reintenta. |
 | **Preview Engine** | `iframe` + `srcDoc` con sandbox de origen opaco. Con el inspector activo, un clic en un elemento lleva el editor a su línea. |
@@ -94,6 +95,11 @@ DEFAULT_LLM_PROVIDER=mock
 > Las claves `*_API_KEY` solo se leen en el servidor. `src/lib/env.ts` está marcado como
 > `server-only`: si un componente de cliente lo importara por error, el build fallaría en
 > lugar de filtrar la clave al navegador.
+>
+> **También puedes pegarlas en Ajustes, sin reiniciar** (Gemini, Groq, URL de Ollama y las
+> credenciales de Cloudflare). Se guardan cifradas y solo para tu cuenta, y la de Ajustes gana
+> a la de `.env.local`, que queda como respaldo compartido. Ver
+> [`docs/ENVIRONMENT.md`](docs/ENVIRONMENT.md#claves-guardadas-desde-ajustes).
 
 ### 2. Supabase (opcional)
 
@@ -153,7 +159,7 @@ DEFAULT_LLM_PROVIDER=gemini
 ```
 
 Reinicia y comprueba el estado en **Ajustes → Modelos de IA**, donde puedes lanzar una
-prueba de conexión real. Para verificar el flujo entero contra el modelo:
+prueba de conexión real (o, en lugar de editar `.env.local`, pega ahí mismo la clave). Para verificar el flujo entero contra el modelo:
 
 ```bash
 npm run verify:flow -- --provider=gemini
@@ -181,8 +187,11 @@ CLOUDFLARE_ACCOUNT_ID=...
 CLOUDFLARE_API_TOKEN=...
 ```
 
-Sin esas dos variables la técnica sigue disponible, pero deja marcadores con la descripción de cada
-imagen y el Prompt Studio lo avisa. Si una imagen falla (cuota, tiempo, filtro), la página se guarda
+También puedes pegar el Account ID y el token en **Ajustes → Cloudflare Workers AI**, sin reiniciar
+(se guardan cifrados y solo para tu cuenta; los de Ajustes ganan a estas variables).
+
+Sin esas dos credenciales (ni en Ajustes ni en variables) la técnica sigue disponible, pero deja marcadores
+con la descripción de cada imagen y el Prompt Studio lo avisa. Si una imagen falla (cuota, tiempo, filtro), la página se guarda
 igualmente y **«Reintentar imágenes»** completa solo las pendientes. Compruébalo contra tu cuenta con
 `npm run verify:cloudflare` (genera 2 imágenes). Detalle, límites y errores en
 [`docs/LLM_PROVIDERS.md`](docs/LLM_PROVIDERS.md#generación-de-imágenes-cloudflare-workers-ai) y
@@ -304,6 +313,7 @@ npm run seed:sql    # regenerar supabase/seed.sql desde el catálogo
 npm run verify:flow # recorrido de aceptación de punta a punta (con el server arrancado)
 npm run verify:inspector # instrumentación del inspector y mensajes del iframe (sin servidor)
 npm run verify:prompt # el prompt lleva solo las técnicas elegidas, con y sin LLM (sin servidor ni claves)
+npm run verify:credentials # claves de Ajustes: cifrado, validación, prioridad frente al entorno y uso en cada proveedor (sin servidor ni red)
 npm run verify:images # imágenes: marcadores, cliente, pipeline y env contra un Cloudflare simulado (sin servidor ni cuota)
 npm run verify:images-flow # imágenes de extremo a extremo contra el servidor y el stub (ver docs/DEVELOPMENT.md)
 npm run verify:cloudflare # MANUAL: 2 imágenes reales contra Cloudflare (gasta unas decenas de neuronas)
@@ -313,8 +323,9 @@ npm run verify:cloudflare # MANUAL: 2 imágenes reales contra Cloudflare (gasta 
 
 ## Seguridad
 
-- Las claves de API solo existen en el servidor; no llegan al navegador, ni a la base de
-  datos, ni a los logs.
+- Las claves de API solo existen en el servidor; no llegan al navegador ni a los logs. Las que
+  cada usuario guarda desde Ajustes están en la base de datos **cifradas** (AES-256-GCM, con la
+  clave maestra fuera de ella), nunca en claro.
 - Las llamadas a proveedores se hacen exclusivamente desde route handlers.
 - La vista previa se renderiza en un `iframe` con `sandbox="allow-scripts allow-forms
   allow-popups allow-modals"`. Al **no** incluir `allow-same-origin`, el documento generado
@@ -335,8 +346,9 @@ npm run verify:cloudflare # MANUAL: 2 imágenes reales contra Cloudflare (gasta 
 ## Troubleshooting
 
 **«Ningún proveedor de IA configurado: estás en modo demo»**
-Es el comportamiento esperado sin claves. Añade `GEMINI_API_KEY` o `GROQ_API_KEY` en
-`.env.local` y reinicia el servidor (Next.js no recarga las variables en caliente) — o instala
+Es el comportamiento esperado sin claves. Pega tu clave en **Ajustes** (no hace falta
+reiniciar), o añade `GEMINI_API_KEY` o `GROQ_API_KEY` en `.env.local` y reinicia el servidor
+(Next.js no recarga las variables en caliente) — o instala
 [Ollama](https://ollama.com/download) y descarga un modelo, que no necesita clave.
 
 **«La clave API del proveedor no es válida o ha caducado»**

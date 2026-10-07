@@ -131,6 +131,15 @@ export interface DataStore {
     patch: Partial<Pick<Profile, 'displayName' | 'preferredProvider' | 'preferredModel'>>,
   ): Promise<Profile>;
 
+  /**
+   * Credenciales de proveedores del usuario, YA CIFRADAS (`src/lib/credentials`). El almacen
+   * solo guarda un texto opaco: no sabe lo que contiene ni puede leerlo. No forman parte de
+   * `Profile` a proposito, para que no viajen al cliente con el perfil.
+   */
+  getCredentialsBlob(userId: string): Promise<string | null>;
+  /** `null` borra las credenciales guardadas. */
+  saveCredentialsBlob(userId: string, blob: string | null): Promise<void>;
+
   /* Tecnologias */
   listTechnologies(userId: string | null): Promise<Technology[]>;
   getTechnologiesByIds(ids: string[]): Promise<Technology[]>;

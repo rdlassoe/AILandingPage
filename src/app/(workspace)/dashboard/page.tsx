@@ -15,6 +15,7 @@ import { PageBody, PageHeader } from '@/components/layout/page-header';
 import { Alert, Badge, EmptyState, LinkButton, Metric, Panel, PanelBody, PanelHeader } from '@/components/ui';
 import { requireContext } from '@/lib/auth/session';
 import { getStorageMode } from '@/lib/data';
+import { getUserCredentials } from '@/lib/credentials/server';
 import { getProviderSummaries } from '@/lib/llm/registry';
 import { formatDuration, formatRelative, pluralize } from '@/lib/utils';
 
@@ -32,7 +33,7 @@ export default async function DashboardPage() {
     store.listTechnologies(user.id),
   ]);
 
-  const providers = await getProviderSummaries();
+  const providers = await getProviderSummaries(await getUserCredentials(user.id));
   const configuredProviders = providers.filter((provider) => provider.id !== 'mock' && provider.configured);
   const storageMode = getStorageMode();
 
@@ -245,7 +246,7 @@ export default async function DashboardPage() {
             <PanelHeader
               eyebrow="Observabilidad"
               title="Ultimas ejecuciones"
-              description="Proveedor, modelo, estado y latencia de cada llamada. Nunca se almacenan claves API."
+              description="Proveedor, modelo, estado y latencia de cada llamada. Estos registros nunca incluyen claves API."
             />
             <div className="overflow-x-auto">
               <table className="w-full text-left text-sm">

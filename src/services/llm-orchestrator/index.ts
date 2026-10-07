@@ -1,5 +1,7 @@
 import 'server-only';
 
+import { resolveCredentials } from '@/lib/credentials';
+import { getDataStore } from '@/lib/data';
 import { env } from '@/lib/env';
 import { resolveProvider } from '@/lib/llm/registry';
 import { checkRateLimit } from '@/lib/rate-limit';
@@ -40,7 +42,10 @@ export function computeCacheKey(input: {
 }
 
 export async function runLLM(request: OrchestratorRequest): Promise<OrchestratorOutcome> {
-  const { provider, fellBackToMock, requested } = resolveProvider(request.providerId);
+  // Las credenciales son las del usuario que pide (Ajustes + entorno), no unas globales: la
+  // misma peticion puede ir con la clave de uno o con la del servidor segun quien la haga.
+  const credentials = request.credentials ?? (await resolveCredentials(await getDataStore(), request.ownerId));
+  const { provider, fellBackToMock, requested } = resolveProvider(request.providerId, credentials);
   const model = pickModel(request.model, provider.defaultModel);
   const config = { ...DEFAULT_GENERATION_CONFIG, ...request.config };
 
@@ -64,6 +69,7 @@ export async function runLLM(request: OrchestratorRequest): Promise<Orchestrator
 
   const response = await callWithSingleRetry(async () =>
     provider.generate({
+      credentials,
       system: request.system,
       prompt: request.prompt,
       model,

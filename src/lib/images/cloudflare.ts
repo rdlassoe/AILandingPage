@@ -1,8 +1,8 @@
 import 'server-only';
 
-import { env } from '@/lib/env';
+import { env, envCredentials } from '@/lib/env';
 import { postJson } from '@/lib/llm/http';
-import { LLMError } from '@/types/llm';
+import { LLMError, type EffectiveCredentials } from '@/types/llm';
 import { sniffImage, type ImageMime } from './sniff';
 
 /**
@@ -67,7 +67,12 @@ export interface GeneratedImage {
   model: string;
 }
 
+/** Lo unico que necesita Cloudflare de las credenciales del usuario. */
+export type ImageCredentials = Pick<EffectiveCredentials, 'cloudflareAccountId' | 'cloudflareApiToken'>;
+
 export interface GenerateImageRequest {
+  /** Credenciales del usuario; sin ellas, las del entorno. */
+  credentials?: ImageCredentials;
   prompt: string;
   steps?: number;
   timeoutMs?: number;
@@ -86,15 +91,17 @@ const QUOTA_CODES: ReadonlySet<number> = new Set([3036, 4006]);
 /** "Capacidad temporal": el propio Cloudflare pide reintentar. */
 const BUSY_CODES: ReadonlySet<number> = new Set([3040]);
 
-export function isImageGenerationConfigured(): boolean {
-  return env.cloudflare.enabled;
+/** Cuenta y token, los dos: con solo uno no se puede llamar a la API. */
+export function isImageGenerationConfigured(credentials: ImageCredentials = envCredentials()): boolean {
+  return credentials.cloudflareAccountId.length > 0 && credentials.cloudflareApiToken.length > 0;
 }
 
 export async function generateImage(request: GenerateImageRequest): Promise<GeneratedImage> {
-  if (!env.cloudflare.enabled) {
+  const credentials = request.credentials ?? envCredentials();
+  if (!isImageGenerationConfigured(credentials)) {
     throw new ImageGenerationError({
       code: 'not_configured',
-      message: 'Faltan CLOUDFLARE_ACCOUNT_ID o CLOUDFLARE_API_TOKEN.',
+      message: 'Faltan el Account ID o el token de Cloudflare.',
     });
   }
 
@@ -103,7 +110,8 @@ export async function generateImage(request: GenerateImageRequest): Promise<Gene
     throw new ImageGenerationError({ code: 'invalid_request', message: 'El prompt de la imagen esta vacio.' });
   }
 
-  const { accountId, apiToken, baseUrl, model } = env.cloudflare;
+  const { baseUrl, model } = env.cloudflare;
+  const { cloudflareAccountId: accountId, cloudflareApiToken: apiToken } = credentials;
   const started = Date.now();
 
   let data: CloudflareRunResponse;
@@ -234,10 +242,14 @@ export interface ImageConnectionHealth {
  * es lo mas barato que admite la API. Gasta algunas decenas de neuronas de la
  * cuota diaria; no hay una llamada "gratis" de comprobacion.
  */
-export async function testImageConnection(): Promise<ImageConnectionHealth> {
+export async function testImageConnection(credentials?: ImageCredentials): Promise<ImageConnectionHealth> {
   const started = Date.now();
   try {
-    const image = await generateImage({ prompt: 'a plain white square on a light grey background', steps: 1 });
+    const image = await generateImage({
+      credentials,
+      prompt: 'a plain white square on a light grey background',
+      steps: 1,
+    });
     return {
       ok: true,
       message: `Imagen de ${image.width ?? '?'}x${image.height ?? '?'} (${image.mime}) en ${image.latencyMs} ms.`,
@@ -263,13 +275,13 @@ export async function testImageConnection(): Promise<ImageConnectionHealth> {
 export function describeImageError(code: ImageErrorCode): string {
   switch (code) {
     case 'not_configured':
-      return 'Cloudflare no esta configurado (faltan CLOUDFLARE_ACCOUNT_ID o CLOUDFLARE_API_TOKEN).';
+      return 'Cloudflare no esta configurado: faltan el Account ID o el token (pegalos en Ajustes o define CLOUDFLARE_ACCOUNT_ID y CLOUDFLARE_API_TOKEN en el servidor).';
     case 'quota':
       return 'Cuota gratuita de Cloudflare Workers AI agotada. Vuelve a intentarlo mas tarde.';
     case 'busy':
       return 'Cloudflare Workers AI esta saturado ahora mismo.';
     case 'auth':
-      return 'Cloudflare rechazo las credenciales: revisa CLOUDFLARE_API_TOKEN (permisos Workers AI Read y Edit) y CLOUDFLARE_ACCOUNT_ID.';
+      return 'Cloudflare rechazo las credenciales: revisa el token (permisos Workers AI Read y Edit) y el Account ID.';
     case 'invalid_request':
       return 'Cloudflare rechazo la peticion (prompt o modelo no validos).';
     case 'timeout':

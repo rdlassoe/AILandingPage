@@ -26,6 +26,8 @@ PostgreSQL o a un JSON en disco.
 │                       ├── OllamaProvider                     │
 │                       └── MockProvider                       │
 │    auth/ · validation/ · env · errors · rate-limit           │
+│    credentials/  claves por usuario, cifradas, con respaldo  │
+│                  en el entorno                               │
 │    preview/ · instrumentación y runtime del inspector        │
 │    images/  cliente Cloudflare · marcadores · límites        │
 ├──────────────────────────────────────────────────────────────┤
@@ -608,6 +610,52 @@ El último punto se cambió de «se pide en la petición» a «se impone sobre l
 criterio de `reconcileComposedSections` para las técnicas no elegidas. Detalle y límites en
 [`PROMPT_ENGINE.md`](PROMPT_ENGINE.md#con-el-llm-qué-se-garantiza-y-qué-no).
 
+### 14. Las claves de los proveedores se pueden guardar desde Ajustes: por usuario, cifradas y fuera del cliente
+
+**Decisión.** Antes las claves solo podían vivir en las variables de entorno y Ajustes no tenía
+campos para escribirlas (era una decisión explícita: «las claves nunca llegan a la base de datos»).
+Ahora cada usuario puede pegar las suyas en Ajustes (Gemini, Groq, URL de Ollama y Account ID y token de
+Cloudflare). Esta decisión **revierte** la anterior a petición del usuario y se sostiene en cinco reglas:
+
+1. **Por usuario, no de la app.** En un despliegue con registro abierto, una clave global editable
+   dejaría que cualquier cuenta sustituyera la del dueño. La del entorno sigue existiendo como
+   respaldo compartido: gana la del usuario; sin ella, la del entorno; sin ninguna, el modo demo.
+2. **Cifrada en reposo** (`src/lib/credentials/crypto.ts`): AES-256-GCM, IV nuevo por mensaje y el id
+   del usuario como dato autenticado (un texto cifrado copiado a otra cuenta no se descifra). La
+   base de datos o `db.json` solo guardan texto cifrado; la clave maestra es `CREDENTIALS_ENCRYPTION_KEY`
+   o `.data/credentials.key`, fuera de donde van las claves.
+3. **Nunca vuelven al cliente.** La interfaz recibe origen y cuatro últimos caracteres; no existe
+   una operación que devuelva un valor guardado. Los mensajes de error no repiten lo recibido.
+4. **Lo que se guarda se valida** (`normalizeCredentialValue`): sin espacios ni saltos de línea (iría a
+   una cabecera HTTP), Account ID de 32 hex, tamaños acotados.
+5. **La URL de Ollama solo se cambia en modo local** (SSRF). Las demás URLs están fijas en el código.
+
+**Qué se tocó.** `LLMProvider` y `LLMRequest` reciben las credenciales efectivas en lugar de leer
+`env` (`isConfigured`, `generate`, `testConnection`, `listAvailableModels`); el orquestador las
+resuelve por `ownerId`; el cliente de Cloudflare y el generador de imágenes igual. `DataStore` gana
+`getCredentialsBlob`/`saveCredentialsBlob`, que solo guardan un texto opaco. En Supabase viven en
+`profiles.credentials` (columna nueva, fuera de `Profile` y de `toProfile` para que no viajen con el
+perfil); en local, en `db.json`.
+
+**Alternativas.** Una clave global en un archivo del servidor (cualquier usuario la cambiaría, y no
+persiste en serverless); una tabla propia (más políticas RLS y cambios en los recuentos de
+`db:check`, para un solo texto por usuario); guardarlas sin cifrar (una copia de la base o de
+`db.json` las expondría).
+
+**Coste y límites conocidos.**
+
+- `resolveCredentials` no lanza nunca: se ejecuta en cada llamada a un modelo y en cada página, y una
+  base a la que le falte la columna (`db:setup` pendiente) no puede tumbar la aplicación. Cae al
+  entorno y Ajustes explica por qué no se puede guardar. En Supabase supone una consulta más por
+  página (deduplicada entre el layout y la página con `cache` de React).
+- Si se pierde la clave maestra, las claves guardadas son irrecuperables: hay que volver a escribirlas.
+- **No se ha probado contra una base de Supabase real**: se verificó el almacén local, el cifrado, la
+  validación, el uso de la clave del usuario en cada proveedor y la interfaz. `SupabaseDataStore`
+  (consulta a `profiles.credentials`) compila y sigue el patrón del resto, pero hay que ejecutar
+  `npm run db:setup` y probarlo.
+- Una clave guardada es de una cuenta de proveedor: el limitador de uso de la aplicación sigue
+  siendo por usuario, pero la cuota gratuita de Gemini, Groq o Cloudflare es de esa cuenta.
+
 ---
 
 ## Manejo de errores
@@ -638,7 +686,8 @@ Estados de interfaz cubiertos: `idle`, `loading`, `success`, `error`, `empty`, `
   solo cuando el usuario pide reutilizar un resultado: no se cachea de forma indiscriminada,
   porque la variación entre generaciones es parte del producto.
 - **Observabilidad**: cada llamada deja proveedor, modelo, estado, latencia, tokens y
-  avisos del validador en `generations`. Nunca se almacenan claves.
+  avisos del validador en `generations`. Esa tabla nunca guarda claves (las que el usuario escribe
+  en Ajustes viven aparte, cifradas: decisión 14).
 
 Esa tabla justificó su existencia durante la integración de los proveedores reales: los
 fallos del flujo se diagnosticaron leyéndola, y resultaron ser `503` y `429` del proveedor,

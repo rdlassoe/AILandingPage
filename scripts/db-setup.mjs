@@ -244,6 +244,12 @@ async function inspect(client) {
     imagesBucket = null;
   }
 
+  // La columna donde cada usuario guarda sus credenciales (cifradas) desde Ajustes.
+  const { rows: credentialsColumn } = await client.query(
+    `select 1 from information_schema.columns
+      where table_schema = 'public' and table_name = 'profiles' and column_name = 'credentials'`,
+  );
+
   const counts = {};
   const presentTables = new Set(tables.map((r) => r.table_name));
   for (const table of ['technologies', 'prompt_templates', 'llm_models']) {
@@ -258,6 +264,7 @@ async function inspect(client) {
     rlsDisabled: rls.filter((r) => !r.relrowsecurity).map((r) => r.relname),
     policies: policies[0].total,
     imagesBucket,
+    credentialsColumn: credentialsColumn.length > 0,
     counts,
   };
 }
@@ -301,6 +308,13 @@ function report(state) {
     warn('El bucket `landing-images` no es publico: la vista previa (iframe sandbox sin cookies) no podra mostrar las imagenes');
   } else if (state.imagesBucket) {
     ok('Bucket publico `landing-images` presente');
+  }
+
+  // No es fatal: sin la columna solo falla guardar claves desde Ajustes (las del servidor siguen valiendo).
+  if (state.tables.has('profiles') && state.credentialsColumn === false) {
+    warn('Falta la columna `profiles.credentials`: no se podran guardar claves API desde Ajustes (ejecuta db:setup)');
+  } else if (state.credentialsColumn) {
+    ok('Columna `profiles.credentials` presente (claves cifradas desde Ajustes)');
   }
 
   const seeded =

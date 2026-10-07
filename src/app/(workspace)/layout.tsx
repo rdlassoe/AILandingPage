@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 import { ActiveProviderProvider } from '@/components/layout/active-provider-context';
 import { AppShell } from '@/components/layout/app-shell';
 import { getOptionalContext } from '@/lib/auth/session';
+import { getUserCredentials } from '@/lib/credentials/server';
 import { getStorageMode } from '@/lib/data';
 import { env } from '@/lib/env';
 import { listProviderStatuses } from '@/lib/llm/registry';
@@ -17,9 +18,10 @@ export default async function WorkspaceLayout({ children }: { children: React.Re
 
   const { user, profile } = ctx;
   const initialProviderId = profile.preferredProvider ?? env.llm.defaultProvider;
+  const credentials = await getUserCredentials(user.id);
 
   return (
-    <ActiveProviderProvider initialProviderId={initialProviderId} providerStatuses={listProviderStatuses()}>
+    <ActiveProviderProvider initialProviderId={initialProviderId} providerStatuses={listProviderStatuses(credentials)}>
       <AppShell
         info={{
           displayName: user.displayName,

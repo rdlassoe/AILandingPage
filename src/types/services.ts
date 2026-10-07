@@ -11,7 +11,7 @@ import type {
   Technology,
   VariationStrategy,
 } from './domain';
-import type { LLMGenerationConfig, ProviderId } from './llm';
+import type { EffectiveCredentials, LLMGenerationConfig, ProviderId } from './llm';
 
 /* -------------------------------------------------------------------------
  * Prompt Engine
@@ -123,6 +123,8 @@ export interface ValidatedOutput {
 
 export interface OrchestratorRequest {
   ownerId: string;
+  /** Credenciales ya resueltas; si se omiten, el orquestador las resuelve por `ownerId`. */
+  credentials?: EffectiveCredentials;
   system?: string;
   prompt: string;
   providerId?: ProviderId;

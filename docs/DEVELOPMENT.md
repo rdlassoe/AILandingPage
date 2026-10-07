@@ -19,6 +19,7 @@ npm run seed:sql     # regenera supabase/seed.sql desde el catálogo
 npm run verify:flow  # recorrido de aceptación contra el servidor de desarrollo
 npm run verify:inspector  # instrumentación del inspector y mensajes del iframe (sin servidor)
 npm run verify:prompt     # el prompt lleva solo las técnicas elegidas, con y sin LLM (sin servidor ni claves)
+npm run verify:credentials # claves de Ajustes: cifrado, validación, prioridad frente al entorno y uso en cada proveedor (sin servidor ni red)
 npm run verify:images     # marcadores, cliente de Cloudflare, pipeline y env, contra el stub (sin servidor ni cuota)
 npm run verify:images-flow  # recorrido real de las imágenes contra el servidor y el stub (ver más abajo)
 npm run verify:cloudflare # MANUAL: 2 imágenes reales contra Cloudflare (gasta unas decenas de neuronas)
@@ -106,7 +107,9 @@ ahí con su proveedor, modelo, estado y mensaje de error.
   `instrument.ts` y `messages.ts` no importan nada del proyecto en tiempo de ejecución, para que
   `scripts/verify-inspector.mjs` pueda ejecutarlos directamente con Node.
 - `services/` — lógica de negocio. No importa React ni Next.
-- `lib/` — infraestructura: datos, proveedores, sesión, validación, utilidades.
+- `lib/` — infraestructura: datos, proveedores, sesión, validación, utilidades. `lib/credentials/` guarda y
+  resuelve las claves de los proveedores por usuario (cifrado en `crypto.ts`; `server.ts` solo para páginas
+  y layouts, con `cache` de React).
 
 Ningún componente llama a un proveedor LLM ni al SDK de Supabase directamente.
 
@@ -374,6 +377,37 @@ vuelva a existir siempre, las hace fallar.
 Para ejecutar más módulos de `src/` de esta forma basta importarlos desde un script que registre
 el hook; ojo con `@/services/llm-orchestrator`, que el hook sustituye siempre por el stub.
 
+### Claves guardadas desde Ajustes
+
+```bash
+npm run verify:credentials   # no necesita servidor, claves ni red, y no toca `.data/`
+```
+
+Usa un almacén simulado en memoria y un `fetch` interceptado, con la clave maestra fijada por entorno
+(así no crea `.data/credentials.key`). Comprueba:
+
+1. **Cifrado**: ida y vuelta, IV distinto cada vez, un texto alterado no se descifra, el de una cuenta no
+   sirve en otra, otra clave maestra falla en lugar de devolver basura.
+2. **Validación** de cada campo (sin espacios ni saltos de línea, 32 hex del Account ID, la URL de Ollama
+   solo en modo local) y que el mensaje de error nunca repite el valor.
+3. **Prioridad**: la clave del usuario gana a la del entorno, y sin ella se usa el entorno; otro usuario
+   no ve la del primero.
+4. **Estado para la interfaz**: ninguna clave completa, solo origen y cuatro últimos caracteres.
+5. **Guardar y borrar**: cambios parciales, todo o nada, aislamiento entre cuentas.
+6. **Robustez**: una base caída o un texto ilegible no tumban `resolveCredentials`.
+7. **Que de verdad se usa la clave del usuario** en la cabecera de Gemini, la de Groq, la URL de Ollama y
+   el Account ID y token de Cloudflare, y que sin credenciales no sale ninguna petición.
+
+Al escribirlo se comprobó con mutaciones que detecta de verdad: dar prioridad al entorno, devolver la
+clave entera como pista, lanzar con la base caída, quitar el dato autenticado del cifrado, o que Gemini use
+la clave del entorno, hacen fallar las pruebas.
+
+Lo que **no** cubre un script y se comprobó a mano en la aplicación (modo local): guardar desde la
+interfaz, que la clave no aparece en el DOM, en la respuesta de la API, en el almacenamiento del navegador
+ni en `db.json`; que «Probar conexión» y una composición de prompt usan la clave guardada (Google responde
+«API key not valid» a una clave de prueba); los errores 401 y 422; el aislamiento entre dos cuentas; y que
+no hay desbordamiento a 375 px. **No se probó contra una base de Supabase real.**
+
 ### Imágenes generadas con IA
 
 Tres niveles, de menos a más real. Ninguno gasta cuota salvo el último.
@@ -544,6 +578,12 @@ Aplicada tanto a la aplicación como a lo que genera:
 ---
 
 ## Límites conocidos
+
+- **Claves guardadas desde Ajustes** (decisión 14): son por usuario y cifradas, pero **la clave maestra
+  es un único punto de fallo** (si se pierde `.data/credentials.key` o cambia `CREDENTIALS_ENCRYPTION_KEY`,
+  hay que volver a escribirlas). La URL de Ollama solo es editable en modo local. En Supabase hace falta
+  `npm run db:setup` y esa parte **no se ha probado contra una base real**. No hay historial ni
+  rotación de claves, y una clave guardada no se puede ver después, solo sustituir o quitar.
 
 - **Almacén local**: sin transacciones ni concurrencia. Es para desarrollo y evaluación.
   Producción = Supabase + RLS.

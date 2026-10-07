@@ -5,8 +5,26 @@ import { ExternalLink, PlugZap } from 'lucide-react';
 
 import { Alert, Badge, Button, Panel, PanelBody, PanelHeader, StatusDot } from '@/components/ui';
 import { apiPost } from '@/lib/api-client';
+import type { CredentialsStatus } from '@/lib/credentials';
 import type { ImageConnectionHealth } from '@/lib/images/cloudflare';
 import { formatDuration } from '@/lib/utils';
+import { CredentialForm, type CredentialFieldDef } from './credential-form';
+
+const IMAGE_FIELDS: CredentialFieldDef[] = [
+  {
+    field: 'cloudflareAccountId',
+    label: 'Account ID de Cloudflare',
+    kind: 'text',
+    placeholder: '32 caracteres hexadecimales',
+    help: 'Lo ves en el panel de Cloudflare (Workers AI).',
+  },
+  {
+    field: 'cloudflareApiToken',
+    label: 'Token de API de Cloudflare',
+    kind: 'secret',
+    placeholder: 'Token con permisos Workers AI Read y Edit',
+  },
+];
 
 /**
  * Estado del proveedor de imagenes (Cloudflare Workers AI, FLUX).
@@ -14,17 +32,20 @@ import { formatDuration } from '@/lib/utils';
  * No es un proveedor de texto: no se elige ni se pone por defecto, solo
  * rellena los marcadores de imagen que deja el LLM cuando esta elegida la
  * tecnica "Generacion de imagenes". Por eso tiene su propio panel en vez de una
- * tarjeta mas de la rejilla. Las credenciales viven solo en las variables de
- * entorno del servidor, igual que las claves de los demas proveedores.
+ * tarjeta mas de la rejilla. Las credenciales (Account ID y token) las guarda cada
+ * usuario cifradas, igual que las claves de los demas proveedores; el servidor puede
+ * aportar las suyas por variables de entorno como respaldo.
  */
 export function ImageProviderSettings({
   configured,
   model,
   maxPerLanding,
+  credentials,
 }: {
   configured: boolean;
   model: string;
   maxPerLanding: number;
+  credentials: CredentialsStatus;
 }) {
   const [health, setHealth] = useState<ImageConnectionHealth | null>(null);
   const [testing, setTesting] = useState(false);
@@ -58,8 +79,10 @@ export function ImageProviderSettings({
 
         <div className="flex items-center justify-between gap-2">
           <StatusDot status={state} />
-          {configured ? <Badge tone="ok">credenciales detectadas</Badge> : <Badge>sin credenciales</Badge>}
+          {configured ? <Badge tone="ok">credenciales configuradas</Badge> : <Badge>sin credenciales</Badge>}
         </div>
+
+        <CredentialForm fields={IMAGE_FIELDS} credentials={credentials} saveLabel="Guardar credenciales" />
 
         {health ? (
           <p className={health.ok ? 'text-xs text-muted' : 'text-xs text-danger'}>

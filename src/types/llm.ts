@@ -39,7 +39,24 @@ export const DEFAULT_GENERATION_CONFIG: LLMGenerationConfig = {
   topP: 0.95,
 };
 
+/**
+ * Credenciales con las que se habla con los proveedores EN ESTA PETICION: las que el
+ * usuario guardo en Ajustes y, para lo que no tenga, las de las variables de entorno
+ * (`src/lib/credentials`). Son secretos: solo existen en el servidor, nunca viajan al
+ * cliente ni se registran. Cadena vacia = sin configurar.
+ */
+export interface EffectiveCredentials {
+  geminiApiKey: string;
+  groqApiKey: string;
+  /** URL base del servidor de Ollama (no es secreta, pero es configuracion del usuario). */
+  ollamaBaseUrl: string;
+  cloudflareAccountId: string;
+  cloudflareApiToken: string;
+}
+
 export interface LLMRequest {
+  /** Credenciales efectivas del usuario que hace la peticion. */
+  credentials: EffectiveCredentials;
   /** Instruccion de sistema / rol. */
   system?: string;
   /** Prompt de usuario ya ensamblado por el Prompt Engine. */
@@ -93,15 +110,15 @@ export interface LLMProvider {
   readonly envKey: string | null;
   readonly models: readonly LLMModelInfo[];
   readonly defaultModel: string;
-  isConfigured(): boolean;
+  isConfigured(credentials: EffectiveCredentials): boolean;
   generate(request: LLMRequest): Promise<LLMResponse>;
-  testConnection(): Promise<ProviderHealth>;
+  testConnection(credentials: EffectiveCredentials): Promise<ProviderHealth>;
   /**
    * Solo para proveedores cuyo catalogo no se puede fijar de antemano (p.ej.
    * Ollama: depende de que modelos haya descargado cada maquina). Si no se
    * implementa, la aplicacion usa `models` como catalogo estatico.
    */
-  listAvailableModels?(): Promise<LLMModelInfo[]>;
+  listAvailableModels?(credentials: EffectiveCredentials): Promise<LLMModelInfo[]>;
 }
 
 export type LLMErrorCode =
