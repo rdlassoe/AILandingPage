@@ -100,6 +100,11 @@ export function ProjectPhases({
         {define ? (
           <div className="border-t border-line pt-4">
             <p className="eyebrow mb-2">Define · arquitectura de informacion</p>
+            {define.informationArchitecture.length === 0 ? (
+              <p className="text-sm text-muted">
+                El brief no fija secciones: la estructura de la pagina la decide el prompt al componerse.
+              </p>
+            ) : null}
             <ol className="grid gap-1.5">
               {define.informationArchitecture.map((section) => (
                 <li key={section.id} className="flex gap-3 text-sm">

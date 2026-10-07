@@ -37,7 +37,7 @@ Groq ni Ollama.
 | **Dashboard** | Estado del sistema, atajos y observabilidad de las últimas ejecuciones. |
 | **Project Builder** | Asistente de 3 pasos: qué, para quién, con qué stack. El estilo, la estructura y las restricciones negativas no se preguntan: las decide el prompt según las técnicas elegidas. |
 | **Discover / Define** | Análisis del encargo (nicho, público, fricciones) y derivación de la arquitectura de información. |
-| **Technology Manager** | Las tecnologías son datos: cada una aporta instrucciones, restricciones y requisitos de salida al prompt. |
+| **Technology Manager** | Las tecnologías son datos: cada una aporta instrucciones y requisitos de salida al prompt (las del catálogo no llevan restricciones; las que crees tú sí pueden). |
 | **Seed String Engine** | Si la técnica «Cadenas Semilla» está elegida, genera un string aleatorio en cada ejecución (técnica *String Seed of Thought*); no hay catálogo, lo manipula el propio modelo para derivar una dirección creativa. |
 | **Prompt Engine** | Ensambla un prompt de hasta 17 secciones canónicas de forma determinista, con únicamente las técnicas de diseño elegidas (también cuando lo reescribe un LLM). |
 | **Prompt Composer** | Combina varias tecnologías, detecta conflictos y resuelve prioridades. |

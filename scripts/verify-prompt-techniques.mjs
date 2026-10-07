@@ -23,6 +23,8 @@ import { register } from 'node:module';
 register('./lib/ts-resolve-hook.mjs', import.meta.url);
 
 const engine = await import(new URL('../src/services/prompt-engine/index.ts', import.meta.url).href);
+const catalog = await import(new URL('../src/lib/data/catalog.ts', import.meta.url).href);
+const discoverEngine = await import(new URL('../src/services/discover-engine/index.ts', import.meta.url).href);
 const {
   buildLandingPrompt,
   buildSystemInstruction,
@@ -30,6 +32,9 @@ const {
   DESIGN_TECHNIQUES,
   DEFAULT_TECHNIQUE_IDS,
   BASE_NEGATIVE_CONSTRAINTS,
+  composeTechnologies,
+  extractClaims,
+  PromptRejectedError,
 } = engine;
 
 let failures = 0;
@@ -474,6 +479,190 @@ const DEFAULTS = DEFAULT_TECHNIQUE_IDS;
       `Compositor (${label}): FUNCTIONAL REQUIREMENTS debe ser coherente con la arquitectura que escriba`,
     );
   }
+}
+
+/* ------- 5. datos inventados por el compositor: se rechazan en codigo, no solo en la peticion ------- */
+
+{
+  // Caso real: DISCOVER propuso diferenciadores que el brief no daba, y el compositor los concreto
+  // ("Shopify", "5 minutos"). Se reproduce con el mismo analisis y el mismo copy del prompt que dio origen a esto.
+  const discover = {
+    niche: 'Software web de gestion de inventario',
+    audienceInsight: 'Les preocupa perder ventas por falta de stock.',
+    valueProposition: 'Controla tu stock y vende online.',
+    context: 'El e-commerce crece.',
+    differentiators: [
+      'Integracion en tiempo real con multiples canales de venta.',
+      'Soporte en espanol 24/7 y capacitacion incluida.',
+      'Implementacion sin codigo y puesta en marcha en minutos.',
+      'Modelo de precios escalable por transaccion.',
+    ],
+    visualDirections: [],
+    marketSophistication: 3,
+    frictions: ['Duda sobre la integracion con su plataforma actual.'],
+    generatedAt: null,
+  };
+  const claimsProject = {
+    ...emptyProject,
+    basics: { ...emptyProject.basics, description: 'Prueba de 14 dias para tiendas web.', primaryCta: 'Probar 14 dias' },
+  };
+  const draft = buildLandingPrompt({
+    project: claimsProject,
+    technologies: [],
+    randomSeedString: null,
+    negativeConstraints: [],
+    designTechniques: [],
+    discover,
+    define: null,
+  });
+  const copyOf = (sections) => sections.find((s) => s.title === 'COPY REQUIREMENTS')?.body ?? '';
+
+  const invented = await compose(draft, [], (sections) =>
+    join(
+      setBody(
+        sections,
+        'COPY REQUIREMENTS',
+        [
+          '- Tono: directo',
+          '- Contenido:',
+          '  - Caracteristicas: 1. Integracion instantanea con Shopify, WooCommerce y marketplaces.',
+          '  - 3. Configuracion sin codigo en menos de 5 minutos. Soporte 24/7 en espanol.',
+          '  - FAQ: "La integracion se completa en 3 minutos". Mas de 500 clientes desde 2019, ahorra un 30 %.',
+        ].join('\n'),
+      ),
+    ),
+  );
+  const message = invented.error?.message ?? '';
+  check(
+    invented.error instanceof PromptRejectedError && !invented.built,
+    'Datos inventados en COPY REQUIREMENTS: se rechaza y se cae al borrador (con PromptRejectedError)',
+    invented.error ? '' : 'se acepto',
+  );
+  for (const expected of ['5 minutos', '3 minutos', 'Shopify', 'WooCommerce', '500 clientes', '2019', '30 %']) {
+    check(message.includes(expected), `El motivo nombra el dato inventado: ${expected}`);
+  }
+  check(!message.includes('24/7'), 'El motivo NO acusa "24/7": viene del analisis DISCOVER, que es parte del encargo');
+
+  // Un modelo que solo reordena lo que el encargo ya dice no se rechaza (cifras en digitos o en letras).
+  const faithful = await compose(draft, [], (sections) =>
+    join(
+      setBody(
+        setBody(sections, 'COPY REQUIREMENTS', '- Tono: directo\n- Prueba de 14 días. Soporte en español 24/7, integración en tiempo real.'),
+        'OBJECTIVE',
+        'Que el visitante entienda en menos de 15 segundos que es y para quien. Prueba de catorce dias.',
+      ),
+    ),
+  );
+  check(!faithful.error && faithful.built, 'Un modelo que usa solo las cifras del encargo (en digitos o letras) no se rechaza', faithful.error?.message ?? '');
+
+  // Lo que se vigila no incluye las secciones llenas de numeros y nombres legitimos.
+  const legit = await compose(draft, [], (sections) =>
+    join(
+      setBody(
+        setBody(sections, 'VISUAL DIRECTION', 'Paleta #0066B2 y #FF6F00, hue 207, tipografia Inter a 1.5 rem, radio 4 px, retícula de 12 columnas.'),
+        'INFORMATION ARCHITECTURE',
+        '1. Hero — mensaje principal.\n2. Cómo funciona — pasos.\n3. Preguntas frecuentes — dudas.\nLa sección Cómo funciona va tras el Hero.',
+      ),
+    ),
+  );
+  check(!legit.error && legit.built, 'Colores, tamanos, fuentes y nombres de seccion en VISUAL/ARQUITECTURA no son datos inventados', legit.error?.message ?? '');
+
+  const claims = extractClaims('Mas de quince clientes, 99,9 % de disponibilidad, 5 min, desde 2020 y 24/7.');
+  check(
+    ['15|cliente', '999|%', '5|minuto', '2020|ano', '24/7|*'].every((key) => claims.has(key)),
+    'extractClaims entiende cifras en letras y digitos, porcentajes, abreviaturas, anos y 24/7',
+    [...claims.keys()].join(','),
+  );
+}
+
+/* ------- 6. catalogo de tecnologias sin restricciones propias ------- */
+
+{
+  const presets = catalog.PRESET_TECHNOLOGIES.map((t) => ({ ...t, createdAt: '', updatedAt: '' }));
+  const withConstraints = presets.filter((t) => t.constraints.length > 0).map((t) => t.slug);
+  check(withConstraints.length === 0, 'Ninguna tecnologia del catalogo lleva restricciones', withConstraints.join(','));
+
+  const base = composeTechnologies(['html5', 'css3', 'javascript'].map((slug) => presets.find((t) => t.slug === slug)));
+  check(!base.block.includes('Restricciones tecnicas'), 'TECHNOLOGY no emite el titulo "Restricciones tecnicas" vacio');
+  check(base.block.includes('- Stack: HTML5, CSS3, JavaScript ES2022'), 'El stack no repite la version del nombre ("HTML5 5")', base.block.split('\n')[0]);
+  check(base.block.includes('Requisitos de salida del stack'), 'Los requisitos de salida del stack siguen en TECHNOLOGY');
+
+  const custom = { ...presets[0], id: 'mia', slug: 'mia', name: 'Mia', version: null, constraints: ['Sin cookies de terceros.'], ownerId: 'u' };
+  const withCustom = composeTechnologies([presets[0], custom]);
+  check(
+    withCustom.block.includes('### Restricciones tecnicas') && withCustom.block.includes('- Sin cookies de terceros.'),
+    'Las restricciones de una tecnologia creada por el usuario si se respetan',
+  );
+}
+
+/* ------- 7. DEFINE ya no inventa arquitectura ni criterios de accesibilidad ------- */
+
+{
+  const spec = discoverEngine.buildDefineSpec({ ...emptyProject, discover: null });
+  check(spec.informationArchitecture.length === 0, 'DEFINE sin secciones en el brief: arquitectura vacia (no inventa 6)', `${spec.informationArchitecture.length}`);
+  check(spec.accessibilityCriteria.length === 0, 'DEFINE no genera criterios de accesibilidad repetidos');
+
+  const withSections = discoverEngine.buildDefineSpec({ ...emptyProject, content: { ...emptyProject.content, sections: ['Hero', 'Planes', 'Contacto'] }, discover: null });
+  check(
+    withSections.informationArchitecture.map((s) => s.name).join('|') === 'Hero|Planes|Contacto',
+    'DEFINE con secciones en el brief: las respeta, en orden',
+  );
+
+  // Proyectos que ejecutaron DEFINE antes del cambio: tienen guardados los 6 de siempre y los 4 criterios.
+  const legacyDefine = {
+    informationArchitecture: catalog.LEGACY_DEFINE_DEFAULT_SECTIONS.map((name, index) => ({ id: `s${index + 1}`, name, purpose: 'p', order: index + 1, contentNotes: '', required: index === 0 })),
+    visualHierarchy: '', ctaStrategy: '', copyStrategy: '', styleDirection: '',
+    accessibilityCriteria: ['Contraste minimo 4.5:1 en texto de cuerpo.', 'Navegacion completa por teclado con foco visible.', 'Un unico h1 y jerarquia de encabezados sin saltos.', 'Formularios con label asociado y mensajes de error accesibles.'],
+    responsiveCriteria: [], definedAt: 'x',
+  };
+  const stored = { ...emptyProject, define: legacyDefine };
+  const old = draftOf(stored, []);
+  const fresh = draftOf(emptyProject, []);
+  check(
+    sectionBody(old, 'INFORMATION_ARCHITECTURE') === sectionBody(fresh, 'INFORMATION_ARCHITECTURE') &&
+      sectionBody(old, 'INFORMATION_ARCHITECTURE').includes('define tu la estructura'),
+    'Un DEFINE antiguo (6 secciones por defecto) no predefine la arquitectura: se delega igual',
+  );
+  check(
+    sectionBody(old, 'ACCESSIBILITY') === sectionBody(fresh, 'ACCESSIBILITY'),
+    'Un DEFINE antiguo no repite sus 4 criterios en ACCESSIBILITY',
+  );
+
+  // Si el brief SI fija esas mismas secciones, es decision del usuario y se respeta.
+  const explicit = { ...emptyProject, content: { ...emptyProject.content, sections: [...catalog.LEGACY_DEFINE_DEFAULT_SECTIONS] }, define: legacyDefine };
+  check(/^1\. Hero/m.test(sectionBody(draftOf(explicit, []), 'INFORMATION_ARCHITECTURE')), 'Secciones fijadas por el brief (aunque coincidan con el DEFINE antiguo) se respetan');
+}
+
+/* ------- 8. DISCOVER: no se le pide inventar datos ------- */
+
+{
+  const stored = [];
+  const store = {
+    getProject: async () => ({ ...emptyProject, content: { ...emptyProject.content, features: ['Facturas'] } }),
+    createGeneration: async () => ({ id: 'g1' }),
+    updateGeneration: async () => ({}),
+    updateProject: async (_owner, _id, patch) => stored.push(patch),
+  };
+  let request = null;
+  globalThis.__fakeRunLLMJson = async (req) => {
+    request = req;
+    return {
+      data: { niche: 'n', audienceInsight: 'a', valueProposition: 'v', context: 'c', differentiators: [], visualDirections: ['x'], marketSophistication: 3, frictions: ['f'] },
+      outcome: { providerId: 'gemini', model: 'simulado', isMock: false, latencyMs: 1, inputTokens: 1, outputTokens: 1, cacheKey: 'k' },
+    };
+  };
+  const insights = await discoverEngine.runDiscover({ ownerId: 'u', store }, 'p1', {});
+  const system = request?.system ?? '';
+  const prompt = request?.prompt ?? '';
+  check(system.includes('No inventes datos que el encargo no aporta'), 'DISCOVER: el sistema prohibe inventar cifras, integraciones, soporte y garantias');
+  check(system.includes('devuelvelo vacio'), 'DISCOVER: si el encargo no da base, el campo va vacio');
+  check(!prompt.includes('3-5 diferenciadores concretos') && prompt.includes('[] si no hay ninguno'), 'DISCOVER: ya no pide "3-5 diferenciadores concretos" por narices');
+  check(insights.differentiators.length === 0 && stored[0]?.discover?.differentiators?.length === 0, 'DISCOVER: una lista de diferenciadores vacia es valida y se guarda vacia');
+
+  const withDiscover = draftOf({ ...emptyProject, discover: insights }, []);
+  check(norm(sectionBody(withDiscover, 'CONTEXT')).includes('hipotesis del analisis'), 'CONTEXT presenta el analisis DISCOVER como hipotesis, no como datos del cliente');
+  check(!norm(sectionBody(draftOf(emptyProject, []), 'CONTEXT')).includes('hipotesis'), 'Sin DISCOVER, CONTEXT no habla de hipotesis');
+  delete globalThis.__fakeRunLLMJson;
 }
 
 console.log(failures === 0 ? '\nTODO CORRECTO' : `\n${failures} comprobacion(es) fallida(s)`);

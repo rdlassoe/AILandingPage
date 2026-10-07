@@ -355,6 +355,13 @@ y sustituye `runLLM` por respuestas simuladas —nunca llama a un modelo—. Com
    sofisticación por defecto presentada como elección; el mensaje principal no cae a la
    descripción. Además: las direcciones de DISCOVER llegan al prompt, y las reglas del compositor
    describen lo que de verdad hay (con o sin restricciones, delegando lo que el brief no fija).
+5. **Datos inventados, catálogo, DEFINE y DISCOVER**: el compositor rechaza cantidades, años, dinero y
+   nombres propios que ni el brief ni DISCOVER aportan (con el caso real de «Shopify» y «5 minutos»),
+   y no rechaza lo que el encargo sí dice (cifras en letras o dígitos, colores, fuentes, nombres de
+   sección); ninguna tecnología del catálogo trae restricciones y el título no se emite vacío; DEFINE
+   no inventa arquitectura ni criterios (y un DEFINE antiguo no predefine el prompt); y la petición a
+   DISCOVER prohíbe inventar datos y admite listas vacías. El stub del orquestador de
+   `scripts/lib/ts-resolve-hook.mjs` simula también `runLLMJson` (`globalThis.__fakeRunLLMJson`).
 
 Prueba lo que el código garantiza, no lo que haría un modelo concreto. `verify:flow` añade el
 recorrido por la API real (`POST /api/prompts/compose` con `[]` y con una técnica suelta, que ya no

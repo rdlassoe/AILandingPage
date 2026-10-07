@@ -156,7 +156,13 @@ código.
 2. Detecta conflictos declarados en `conflictsWith`.
 3. Resuelve por `priority`: gana la de mayor prioridad, la otra se descarta **de forma
    visible** (el conflicto viaja en el prompt y se guarda en `prompt_versions.conflicts`).
-4. Concatena instrucciones, restricciones y requisitos de salida, eliminando duplicados.
+4. Concatena instrucciones, restricciones y requisitos de salida, eliminando duplicados. Las
+   tecnologías **del catálogo no llevan restricciones**: antes cada una aportaba reglas de estilo
+   de código («no uses `<div>`», «sin CDN», «no uses `!important`»…) que se añadían solo por
+   marcarla, que el LLM no podía quitar (el bloque se restaura tal cual) y que chocaban entre sí
+   (CSS3 y JavaScript prohibían el CDN que Tailwind y Bootstrap exigen). Si una tecnología
+   creada por el usuario las declara, el bloque lleva `### Restricciones tecnicas`; si ninguna,
+   el título no se emite.
 5. Si alguna tecnología necesita compilación (`selfContainedPreview: false`), añade un
    bloque que exige además un HTML autocontenido equivalente para la vista previa.
 
@@ -297,8 +303,17 @@ la petición sino en lo que el código **impone sobre la respuesta**
 | Ninguna técnica no elegida se cuela en otra sección | Si el texto de una técnica no elegida aparece en una sección que redactó el modelo, la respuesta se **rechaza** y se cae al borrador determinista (`composedByLLM: false`, con el aviso del Prompt Studio). |
 | El modelo sabe qué se le pide | La petición enumera las secciones reales del borrador (número y títulos) y el sistema le dice si hay técnicas y Seed o no. Antes decía siempre «escribe las 17 secciones», lo que invitaba a inventar el bloque de técnicas. |
 
+| El modelo no afirma datos que el encargo no aporta | `findInventedClaims` compara lo que el modelo escribe en `CONTEXT`, `OBJECTIVE`, `TARGET AUDIENCE`, `BUSINESS GOAL`, `INFORMATION ARCHITECTURE` y `COPY REQUIREMENTS` con el borrador (brief **y** análisis DISCOVER): cantidades con unidad («5 minutos», «500 clientes»), porcentajes, dinero, años, «24/7» y, en las secciones de contenido, nombres propios a mitad de frase («Shopify»). Lo que el encargo ya dice, en dígitos o en letras («quince»), no cuenta. Si hay algo, la respuesta se **rechaza** y se cae al borrador, y el Prompt Studio muestra el motivo (`BuiltPrompt.fallbackReason`). |
+
 Qué **no** cubre:
 
+- **La detección de datos inventados es literal y parcial.** Solo ve cantidades con unidad, años, dinero,
+  porcentajes y nombres propios con mayúscula a mitad de frase: no detecta «en un par de minutos», una
+  integración escrita en minúscula ni un dato inventado dicho con otras palabras. Excluye `VISUAL DIRECTION`
+  y `SEED STRING` (colores, rem, grados y fuentes son legítimos) y no mira nombres propios en
+  `INFORMATION ARCHITECTURE`, donde el modelo propone los nombres de las secciones. Puede dar falsos positivos
+  (p. ej. un titular en Title Case); el coste es caer al borrador con su motivo, no perder el prompt.
+  No hay reintento automático con el motivo: se pulsa «Generar prompt» de nuevo.
 - **La detección de una técnica colada es literal.** Busca frases largas de cada técnica
   (`TECHNIQUE_FINGERPRINTS`): una paráfrasis no se detecta. Una frase que ya estuviera en el
   borrador —porque la escribió el usuario en su brief— no cuenta como colada.

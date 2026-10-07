@@ -583,11 +583,30 @@ una lista de restricciones fija fuera de las técnicas (rompe «solo las técnic
 - Sin estilo ni estructura en el brief, un modelo tiende a converger en lo más probable (en 4 de 4
   ejecuciones medidas, «Minimalista»). Lo mitigan la Seed (si está elegida) y las direcciones de
   DISCOVER, que ahora sí entran al prompt; no está medido con el brief nuevo ni con otros proyectos.
-- DEFINE sigue generando una arquitectura por defecto de 6 secciones cuando se ejecuta sin secciones
-  en el brief (`buildDefineSpec`), y esa arquitectura sí se fija en el prompt. Es una acción
-  explícita del usuario, pero predefine la estructura igual que lo hacía el paso eliminado.
+- DEFINE ya no inventa la arquitectura de 6 secciones ni sus 4 criterios de accesibilidad (ver «Qué
+  inventaba cada fase» más abajo). Los proyectos que ya lo ejecutaron los tienen guardados: el motor
+  de prompts reconoce la lista antigua y la ignora (`LEGACY_DEFINE_DEFAULT_SECTIONS`), y no añade sus
+  criterios. Lo demás que DEFINE genera (`ctaStrategy`, `copyStrategy`, `visualHierarchy`,
+  `styleDirection`, `responsiveCriteria`) sigue siendo texto fijo que se muestra en la ficha del
+  proyecto pero **no llega al prompt**, y parte de él suena a técnica («un único elemento dominante
+  por pantalla»): DEFINE queda casi decorativo.
+- Con Supabase, el catálogo (sin restricciones) y las plantillas solo se actualizan al ejecutar
+  `npm run db:setup` (`seed.sql` es idempotente). El modo local lo refresca solo al arrancar.
 - La instrucción de sistema del catálogo (`landing-generator.system`) es solo un dato de
   referencia; la que se usa es `buildSystemInstruction`.
+
+**Qué inventaba cada fase, y qué se hizo (medido sobre un prompt real compuesto por Groq).**
+
+| Origen | Qué aportaba al prompt | Ahora |
+| --- | --- | --- |
+| Catálogo de tecnologías | 9 «Restricciones técnicas» (3 por cada HTML5, CSS3 y JavaScript), restauradas tal cual | Catálogo sin restricciones; el título no se emite vacío |
+| DEFINE | Arquitectura de 6 secciones y 4 criterios de accesibilidad repetidos (la sección pasaba de 9 a 13 líneas) | No los genera; los antiguos se ignoran |
+| DISCOVER | «3-5 diferenciadores concretos» aunque el brief no diera ninguno: salieron «Soporte 24/7» y «precio por transacción», presentados en `CONTEXT` como análisis previo | El sistema le prohíbe inventar cifras, integraciones, soporte y garantías, y devolver `[]` si no hay base. `CONTEXT` los presenta como hipótesis |
+| Compositor | Concretó esos diferenciadores con datos que no estaban en ningún sitio («Shopify», «WooCommerce», «menos de 5 minutos») | `findInventedClaims` rechaza la respuesta y el Prompt Studio dice por qué |
+
+El último punto se cambió de «se pide en la petición» a «se impone sobre la respuesta», que es el mismo
+criterio de `reconcileComposedSections` para las técnicas no elegidas. Detalle y límites en
+[`PROMPT_ENGINE.md`](PROMPT_ENGINE.md#con-el-llm-qué-se-garantiza-y-qué-no).
 
 ---
 

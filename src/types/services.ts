@@ -83,6 +83,13 @@ export interface BuiltPrompt {
    * exito.
    */
   composedByLLM: boolean;
+  /**
+   * Por que se descarto la respuesta del LLM, cuando el motivo es nuestro y apto
+   * para el usuario (omitio secciones, colo una tecnica no elegida, afirmo datos
+   * que el encargo no aporta). No se rellena con errores del proveedor (cuota,
+   * red): llevan datos de la cuenta y no sirven de nada al usuario.
+   */
+  fallbackReason?: string;
 }
 
 /* -------------------------------------------------------------------------

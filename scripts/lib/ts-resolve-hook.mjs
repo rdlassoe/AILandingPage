@@ -27,6 +27,12 @@ const ORCHESTRATOR_STUB =
       "  if (!fake) throw new Error('runLLM sin respuesta simulada: los scripts de verificacion no llaman a un modelo real');",
       '  return fake(request);',
       '}',
+      // DISCOVER usa `runLLMJson`: mismo criterio, delega en `globalThis.__fakeRunLLMJson`.
+      'export async function runLLMJson(request) {',
+      '  const fake = globalThis.__fakeRunLLMJson;',
+      "  if (!fake) throw new Error('runLLMJson sin respuesta simulada: los scripts de verificacion no llaman a un modelo real');",
+      '  return fake(request);',
+      '}',
     ].join('\n'),
   );
 

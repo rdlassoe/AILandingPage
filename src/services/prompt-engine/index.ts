@@ -1,3 +1,4 @@
+import { LEGACY_DEFINE_DEFAULT_SECTIONS } from '@/lib/data/catalog';
 import { composeTechnologies } from './composer';
 import { BASE_NEGATIVE_CONSTRAINTS, getTechniques } from './design-techniques';
 import { SECTION_ORDER, SECTION_TITLES, buildSystemInstruction } from './sections';
@@ -94,6 +95,8 @@ export function buildLandingPrompt(input: PromptBuildInput): BuiltPrompt {
         ? [
             '',
             '### Analisis previo (fase DISCOVER)',
+            // Sin vineta: el Mock Provider solo lee lineas "- Campo: valor".
+            'Hipotesis del analisis, no datos aportados por el cliente: no las presentes como hechos verificados ni inventes cifras a partir de ellas.',
             `- Nicho: ${discover.niche}`,
             `- Propuesta de valor: ${discover.valueProposition}`,
             `- Contexto de mercado: ${discover.context}`,
@@ -203,9 +206,8 @@ export function buildLandingPrompt(input: PromptBuildInput): BuiltPrompt {
       '- Los estados dinamicos actualizan aria-expanded / aria-hidden.',
       '- Enlace "Saltar al contenido" como primer elemento enfocable.',
       '- @media (prefers-reduced-motion: reduce) desactiva las animaciones no esenciales.',
-      ...(project.define?.accessibilityCriteria?.length
-        ? project.define.accessibilityCriteria.map((item) => `- ${item}`)
-        : []),
+      // Los `accessibilityCriteria` de DEFINE ya no se anaden: eran 4 criterios fijos que repetian
+      // estas lineas (los proyectos que ejecutaron DEFINE antes los tienen guardados).
     ].join('\n'),
   );
 
@@ -382,8 +384,9 @@ function renderCopyRequirements(project: Project): string {
  * proyectos y superaba el tope de 6 de "Diseno sustractivo".
  */
 function resolveArchitecture(project: Project, define: DefineSpec | null | undefined): SectionSpec[] | null {
-  if (define?.informationArchitecture && define.informationArchitecture.length > 0) {
-    return [...define.informationArchitecture].sort((a, b) => a.order - b.order);
+  const fromDefine = define?.informationArchitecture ?? [];
+  if (fromDefine.length > 0 && !isLegacyDefaultArchitecture(project, fromDefine)) {
+    return [...fromDefine].sort((a, b) => a.order - b.order);
   }
 
   if (project.content.sections.length > 0) {
@@ -398,6 +401,19 @@ function resolveArchitecture(project: Project, define: DefineSpec | null | undef
   }
 
   return null;
+}
+
+/**
+ * La lista de 6 secciones que DEFINE inventaba cuando el brief no traia ninguna. Si
+ * el brief tampoco las fija, esa arquitectura no la decidio nadie: se ignora.
+ */
+function isLegacyDefaultArchitecture(project: Project, architecture: SectionSpec[]): boolean {
+  if (project.content.sections.length > 0) return false;
+  const names = [...architecture].sort((a, b) => a.order - b.order).map((section) => section.name.trim().toLowerCase());
+  return (
+    names.length === LEGACY_DEFINE_DEFAULT_SECTIONS.length &&
+    names.every((name, index) => name === LEGACY_DEFINE_DEFAULT_SECTIONS[index]?.toLowerCase())
+  );
 }
 
 const PURPOSES: Array<[RegExp, string]> = [

@@ -508,6 +508,7 @@ export function PromptStudio({
           {built?.seedStringValue ? ', pero no tiene la Seed aplicada por el modelo' : ''}. Pulsa
           &quot;Generar prompt&quot; de nuevo para reintentarlo con el LLM real. Solo incluye las
           tecnicas que elegiste.
+          {built?.fallbackReason ? <span className="mt-1 block">Motivo: {built.fallbackReason}</span> : null}
         </Alert>
       ) : null}
 

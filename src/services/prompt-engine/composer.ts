@@ -52,9 +52,9 @@ export function composeTechnologies(technologies: Technology[]): ComposedTechnol
     '',
     instructions,
     '',
-    '### Restricciones tecnicas',
-    ...constraints.map((item) => `- ${item}`),
-    '',
+    // Solo si alguna tecnologia las trae (las del catalogo ya no: ver `catalog.ts`; si las
+    // declara una tecnologia creada por el usuario, se respetan). Sin ellas, sin titulo vacio.
+    ...(constraints.length > 0 ? ['### Restricciones tecnicas', ...constraints.map((item) => `- ${item}`), ''] : []),
     '### Requisitos de salida del stack',
     ...outputRequirements.map((item) => `- ${item}`),
     ...(conflicts.length > 0
@@ -117,7 +117,9 @@ function resolveConflicts(technologies: Technology[]): {
 }
 
 function formatName(tech: Technology): string {
-  return tech.version ? `${tech.name} ${tech.version}` : tech.name;
+  // "HTML5" + version "5" daba "HTML5 5": la version solo se anade si el nombre no la lleva ya.
+  if (!tech.version || tech.name.endsWith(tech.version)) return tech.name;
+  return `${tech.name} ${tech.version}`;
 }
 
 function dedupe(values: string[]): string[] {

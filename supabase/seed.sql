@@ -85,7 +85,7 @@ Usa <header>, <nav>, <main>, <section>, <article>, <aside> y <footer> segun su s
 Cada seccion debe tener un encabezado (h2/h3) coherente con la jerarquia: un unico <h1> por documento.
 Declara <html lang="es">, <meta charset="utf-8"> y <meta name="viewport" content="width=device-width, initial-scale=1">.
 Incluye <title> y <meta name="description"> con contenido real, no marcadores de posicion.',
-  array['No uses <div> cuando exista un elemento semantico adecuado.', 'No dejes atributos alt vacios en imagenes informativas.', 'No uses tablas para maquetar.']::text[], array['Un unico documento HTML completo que empiece por <!DOCTYPE html> y termine en </html>.', 'Contenido textual real y especifico del proyecto.']::text[], array[]::text[],
+  array[]::text[], array['Un unico documento HTML completo que empiece por <!DOCTYPE html> y termine en </html>.', 'Contenido textual real y especifico del proyecto.']::text[], array[]::text[],
   5, true, true, 10, null
 ) on conflict (id) do update set
   name = excluded.name,
@@ -113,7 +113,7 @@ Usa CSS Grid para la maquetacion de pagina y Flexbox para la alineacion de compo
 Trabaja mobile-first: estilos base para movil y @media (min-width: ...) para pantallas mayores.
 Define estados :hover, :focus-visible y :active de forma explicita para todos los elementos interactivos.
 Respeta @media (prefers-reduced-motion: reduce) desactivando animaciones no esenciales.',
-  array['No enlaces hojas de estilo externas ni CDNs.', 'No uses !important salvo que sea imprescindible.', 'No uses unidades fijas en px para tipografia de cuerpo: usa rem.']::text[], array['CSS embebido en <style>, organizado por bloques comentados (tokens, base, layout, componentes, responsive).']::text[], array[]::text[],
+  array[]::text[], array['CSS embebido en <style>, organizado por bloques comentados (tokens, base, layout, componentes, responsive).']::text[], array[]::text[],
   5, true, true, 20, null
 ) on conflict (id) do update set
   name = excluded.name,
@@ -139,7 +139,7 @@ insert into technologies (
 Toda interaccion debe ser funcional de verdad: menu movil que abre y cierra, FAQ que despliega, formulario que valida y muestra feedback.
 Actualiza los atributos ARIA relevantes (aria-expanded, aria-hidden) al cambiar de estado.
 Asegura que la pagina sigue siendo legible y utilizable si el script falla.',
-  array['No uses librerias externas ni imports desde CDN.', 'No inventes llamadas a APIs inexistentes: los formularios se manejan en cliente con feedback simulado y explicito.', 'No uses alert() como mecanismo de feedback.']::text[], array['JavaScript embebido en <script>, sin dependencias, sin errores en consola.']::text[], array[]::text[],
+  array[]::text[], array['JavaScript embebido en <script>, sin dependencias, sin errores en consola.']::text[], array[]::text[],
   5, true, true, 30, null
 ) on conflict (id) do update set
   name = excluded.name,
@@ -164,7 +164,7 @@ insert into technologies (
   'Cuando generes componentes, tipa explicitamente props, estados y retornos.
 Evita `any`: usa tipos concretos, uniones literales o genericos.
 Exporta las interfaces de props junto al componente.',
-  array['No uses `any` ni `@ts-ignore`.', 'No declares tipos que no se utilicen.']::text[], array['Codigo TypeScript compilable, con interfaces de props exportadas.']::text[], array[]::text[],
+  array[]::text[], array['Codigo TypeScript compilable, con interfaces de props exportadas.']::text[], array[]::text[],
   20, false, true, 40, null
 ) on conflict (id) do update set
   name = excluded.name,
@@ -189,7 +189,7 @@ insert into technologies (
   'Estructura la landing en componentes con una unica responsabilidad (Hero, Features, Pricing, FAQ, CTA, Footer).
 Usa hooks para el estado local; no introduzcas gestores de estado globales.
 Las listas deben tener `key` estable y derivarse de datos declarados como constantes al inicio del archivo.',
-  array['No uses componentes de clase.', 'No introduzcas librerias de UI no solicitadas.']::text[], array['Componentes React exportados y ensamblados en un componente raiz de pagina.']::text[], array[]::text[],
+  array[]::text[], array['Componentes React exportados y ensamblados en un componente raiz de pagina.']::text[], array[]::text[],
   30, false, true, 50, null
 ) on conflict (id) do update set
   name = excluded.name,
@@ -216,7 +216,7 @@ Los componentes son Server Components por defecto; anade "use client" solo donde
 Exporta `metadata` desde la pagina con title y description reales.
 Usa `next/image` para imagenes y `next/link` para navegacion interna.
 Ademas del codigo de Next.js, entrega SIEMPRE un documento HTML autocontenido equivalente para la vista previa.',
-  array['No uses `getServerSideProps` ni el Pages Router.', 'No inventes rutas de API que no se implementen.', 'No uses `dangerouslySetInnerHTML`.']::text[], array['Arbol de archivos comentado con el contenido de cada archivo.', 'Un documento HTML autocontenido equivalente para la vista previa.']::text[], array[]::text[],
+  array[]::text[], array['Arbol de archivos comentado con el contenido de cada archivo.', 'Un documento HTML autocontenido equivalente para la vista previa.']::text[], array[]::text[],
   40, false, true, 60, null
 ) on conflict (id) do update set
   name = excluded.name,
@@ -243,7 +243,7 @@ Define la paleta y la tipografia del proyecto con variables CSS en una capa @the
 Trabaja mobile-first usando los prefijos sm:, md:, lg: y xl:.
 Para la vista previa autocontenida, incluye el runtime de Tailwind mediante <script src="https://cdn.tailwindcss.com"></script> y la configuracion inline necesaria.
 Extrae patrones repetidos a componentes en lugar de duplicar cadenas de 20 utilidades.',
-  array['No mezcles CSS suelto con Tailwind salvo para keyframes o tokens.', 'No uses valores arbitrarios en exceso: prioriza la escala del sistema.']::text[], array['Marcado con clases de utilidad coherentes y una escala tipografica y de espaciado consistente.']::text[], array['bootstrap']::text[],
+  array[]::text[], array['Marcado con clases de utilidad coherentes y una escala tipografica y de espaciado consistente.']::text[], array['bootstrap']::text[],
   35, true, true, 70, null
 ) on conflict (id) do update set
   name = excluded.name,
@@ -268,7 +268,7 @@ insert into technologies (
   'Usa la rejilla de Bootstrap (container, row, col-*) y sus utilidades de espaciado.
 Carga Bootstrap desde su CDN oficial en el <head> para que la vista previa funcione.
 Personaliza el aspecto con variables CSS propias para no entregar una pagina con el aspecto por defecto.',
-  array['No entregues una pagina con la estetica por defecto de Bootstrap sin personalizar.', 'No combines Bootstrap con Tailwind.']::text[], array['HTML con clases de Bootstrap y una capa de personalizacion visual propia.']::text[], array['tailwindcss']::text[],
+  array[]::text[], array['HTML con clases de Bootstrap y una capa de personalizacion visual propia.']::text[], array['tailwindcss']::text[],
   35, true, true, 80, null
 ) on conflict (id) do update set
   name = excluded.name,
@@ -293,7 +293,7 @@ insert into technologies (
   'Usa Single File Components con <script setup> y Composition API.
 Separa la landing en componentes por seccion.
 Para la vista previa, entrega ademas un documento HTML autocontenido equivalente.',
-  array['No uses Options API.', 'No introduzcas Vuex ni Pinia para una landing estatica.']::text[], array['Componentes .vue y un HTML autocontenido equivalente para la vista previa.']::text[], array['react', 'nextjs']::text[],
+  array[]::text[], array['Componentes .vue y un HTML autocontenido equivalente para la vista previa.']::text[], array['react', 'nextjs']::text[],
   40, false, true, 90, null
 ) on conflict (id) do update set
   name = excluded.name,
@@ -318,7 +318,7 @@ insert into technologies (
   'Usa componentes .astro y envia cero JavaScript al cliente salvo que una interaccion lo exija.
 Aplica hidratacion parcial (client:visible) unicamente donde sea imprescindible.
 Para la vista previa, entrega ademas un documento HTML autocontenido equivalente.',
-  array['No hidrates componentes estaticos.', 'No introduzcas frameworks de UI innecesarios.']::text[], array['Componentes .astro y un HTML autocontenido equivalente para la vista previa.']::text[], array['nextjs', 'vue']::text[],
+  array[]::text[], array['Componentes .astro y un HTML autocontenido equivalente para la vista previa.']::text[], array['nextjs', 'vue']::text[],
   40, false, true, 100, null
 ) on conflict (id) do update set
   name = excluded.name,
@@ -343,7 +343,7 @@ insert into technologies (
   'Usa iconos de Lucide unicamente cuando aporten significado funcional (estado, accion, categoria).
 En la vista previa autocontenida, inserta los iconos como SVG inline con stroke-width uniforme y `aria-hidden="true"` si son decorativos.
 Manten un unico tamano base de icono por contexto.',
-  array['No uses iconos como relleno decorativo en cada tarjeta.', 'No mezcles varias familias de iconos.']::text[], array['SVG inline coherentes con el resto del sistema visual.']::text[], array[]::text[],
+  array[]::text[], array['SVG inline coherentes con el resto del sistema visual.']::text[], array[]::text[],
   15, true, true, 110, null
 ) on conflict (id) do update set
   name = excluded.name,
@@ -391,7 +391,9 @@ insert into prompt_templates (id, key, name, kind, description, template, variab
   'Fase de descubrimiento: analiza nicho, publico y direcciones visuales.',
   'Eres un estratega de producto digital. Analizas el encargo antes de disenar nada.
 Devuelves UNICAMENTE un objeto JSON valido, sin markdown ni texto adicional.
-Tu analisis es concreto: nada de generalidades aplicables a cualquier negocio.',
+Tu analisis es concreto, pero solo con lo que el encargo dice o permite deducir: nada de generalidades aplicables a cualquier negocio.
+No inventes datos que el encargo no aporta: cifras, plazos, precios, clientes, integraciones, canales de soporte, garantias ni funciones.
+Si el encargo no da base para un campo de lista, devuelvelo vacio ([]) en lugar de rellenarlo.',
   array[]::text[], true
 ) on conflict (id) do update set
   name = excluded.name,
@@ -412,12 +414,12 @@ Devuelve este JSON exacto:
 {
   "niche": "nicho concreto en una frase",
   "audienceInsight": "que le preocupa realmente a este publico, en 2-3 frases",
-  "valueProposition": "propuesta de valor en una frase, sin adjetivos vacios",
+  "valueProposition": "propuesta de valor en una frase, sin adjetivos vacios y usando solo lo que dice el encargo",
   "context": "contexto de mercado y momento de compra",
-  "differentiators": ["3-5 diferenciadores concretos"],
+  "differentiators": ["solo diferenciadores que el encargo mencione o permita deducir (producto, caracteristicas, beneficios); [] si no hay ninguno"],
   "visualDirections": ["3 direcciones visuales posibles, cada una en una frase"],
   "marketSophistication": 3,
-  "frictions": ["3-5 objeciones o fricciones reales que frenan la conversion"]
+  "frictions": ["3-5 objeciones probables del publico (son hipotesis sobre el publico, no datos del producto)"]
 }
 
 marketSophistication va de 1 (mercado virgen) a 5 (mercado saturado de publicidad).',

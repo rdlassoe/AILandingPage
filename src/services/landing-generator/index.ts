@@ -16,6 +16,7 @@ import {
   generateRandomSeedForMock,
   generateRandomSeedString,
   getTechniques,
+  PromptRejectedError,
   renderSeedBlock,
 } from '@/services/prompt-engine';
 import {
@@ -173,8 +174,9 @@ export async function buildPromptForProject(
       errorMessage: error instanceof Error ? error.message : 'Error desconocido',
     });
     // Red de seguridad: el borrador determinista sigue siendo un prompt
-    // valido y completo, solo que no lo redacto el LLM.
-    return draft;
+    // valido y completo, solo que no lo redacto el LLM. Si lo rechazamos nosotros
+    // (secciones omitidas, tecnica colada, datos inventados), el motivo viaja al usuario.
+    return error instanceof PromptRejectedError ? { ...draft, fallbackReason: error.message } : draft;
   }
 }
 

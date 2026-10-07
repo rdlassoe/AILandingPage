@@ -11,9 +11,15 @@ import type { ProviderId } from '@/types/llm';
  * DISCOVER -> DEFINE
  *
  * DISCOVER analiza el encargo (nicho, publico, propuesta de valor, fricciones)
- * y guarda el resultado en el proyecto. DEFINE convierte ese analisis en una
- * arquitectura de informacion y unos criterios concretos, sin volver a llamar
- * al modelo: es una transformacion determinista que el usuario puede editar.
+ * y guarda el resultado en el proyecto. DEFINE convierte las secciones que el
+ * brief fije en una arquitectura de informacion, sin volver a llamar al modelo:
+ * es una transformacion determinista.
+ *
+ * DEFINE ya NO inventa nada que el brief no diga: sin secciones en el brief la
+ * arquitectura queda vacia (la decide quien redacta el prompt) y no genera
+ * criterios de accesibilidad (el texto base del prompt ya los trae completos).
+ * Antes inventaba una lista de 6 secciones y 4 criterios fijos que predefinian
+ * el prompt, chocaban con "Diseno sustractivo" y repetian lo ya dicho.
  *
  * La fase DELIVER es responsabilidad del Landing Generator.
  */
@@ -21,7 +27,9 @@ import type { ProviderId } from '@/types/llm';
 const DISCOVER_SYSTEM = [
   'Eres un estratega de producto digital. Analizas el encargo antes de disenar nada.',
   'Devuelves UNICAMENTE un objeto JSON valido, sin markdown ni texto adicional.',
-  'Tu analisis es concreto: nada de generalidades aplicables a cualquier negocio.',
+  'Tu analisis es concreto, pero solo con lo que el encargo dice o permite deducir: nada de generalidades aplicables a cualquier negocio.',
+  'No inventes datos que el encargo no aporta: cifras, plazos, precios, clientes, integraciones, canales de soporte, garantias ni funciones.',
+  'Si el encargo no da base para un campo de lista, devuelvelo vacio ([]) en lugar de rellenarlo.',
 ].join('\n');
 
 interface RawDiscover {
@@ -84,12 +92,12 @@ export async function runDiscover(
         '{',
         '  "niche": "nicho concreto en una frase",',
         '  "audienceInsight": "que le preocupa realmente a este publico, en 2-3 frases",',
-        '  "valueProposition": "propuesta de valor en una frase, sin adjetivos vacios",',
+        '  "valueProposition": "propuesta de valor en una frase, sin adjetivos vacios y usando solo lo que dice el encargo",',
         '  "context": "contexto de mercado y momento de compra",',
-        '  "differentiators": ["3-5 diferenciadores concretos"],',
+        '  "differentiators": ["solo diferenciadores que el encargo mencione o permita deducir (producto, caracteristicas, beneficios); [] si no hay ninguno"],',
         '  "visualDirections": ["3 direcciones visuales posibles"],',
         '  "marketSophistication": 3,',
-        '  "frictions": ["3-5 objeciones reales que frenan la conversion"]',
+        '  "frictions": ["3-5 objeciones probables del publico (son hipotesis sobre el publico, no datos del producto)"]',
         '}',
         '',
         'marketSophistication va de 1 (mercado virgen) a 5 (mercado saturado de publicidad).',
@@ -130,10 +138,7 @@ export async function runDiscover(
  * especificacion editable. No consume cuota de ningun proveedor.
  */
 export function buildDefineSpec(project: Project): DefineSpec {
-  const sectionNames =
-    project.content.sections.length > 0
-      ? project.content.sections
-      : ['Hero', 'Propuesta de valor', 'Caracteristicas', 'Como funciona', 'Preguntas frecuentes', 'CTA final'];
+  const sectionNames = project.content.sections;
 
   const informationArchitecture: SectionSpec[] = sectionNames.map((name, index) => ({
     id: `section-${index + 1}`,
@@ -161,12 +166,8 @@ export function buildDefineSpec(project: Project): DefineSpec {
         ? 'Mercado saturado: entra por el mecanismo concreto y por la prueba, no por la promesa.'
         : 'Mercado poco saturado: explica primero el problema y el resultado, luego el mecanismo.',
     styleDirection: project.visual.style,
-    accessibilityCriteria: [
-      'Contraste minimo 4.5:1 en texto de cuerpo.',
-      'Navegacion completa por teclado con foco visible.',
-      'Un unico h1 y jerarquia de encabezados sin saltos.',
-      'Formularios con label asociado y mensajes de error accesibles.',
-    ],
+    // Vacio a proposito: la seccion ACCESSIBILITY del prompt ya lo cubre y esto lo repetia.
+    accessibilityCriteria: [],
     responsiveCriteria: [
       'Mobile-first con breakpoints en 768px y 1024px.',
       'Sin desbordamiento horizontal a 360px.',
